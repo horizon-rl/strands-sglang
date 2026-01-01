@@ -29,6 +29,7 @@ dependencies = [
     "strands-agents",
     "httpx",
     "transformers",
+    "openai",
 ]
 
 [project.urls]
