@@ -64,8 +64,8 @@ class ToolCallParseResult:
         return self.raw is not None
 
     @property
-    def model_input(self) -> str:
-        """Get the input string to pass to the tool executor.
+    def payload(self) -> str:
+        """Get the tool call payload string to pass to the tool executor.
 
         For successful parses, returns JSON-encoded input.
         For errors, returns the raw content (so model sees its mistake).

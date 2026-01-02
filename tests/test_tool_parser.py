@@ -50,32 +50,32 @@ class TestToolCallParseResult:
         assert result.is_error is True
         assert result.raw == '{"malformed": json}'
 
-    def test_model_input_success(self):
-        """model_input returns JSON-encoded input for successful parses."""
+    def test_payload_success(self):
+        """payload returns JSON-encoded input for successful parses."""
         result = ToolCallParseResult(
             id="call_123",
             name="my_tool",
             input={"arg": "value", "num": 42},
         )
-        assert result.model_input == '{"arg": "value", "num": 42}'
+        assert result.payload == '{"arg": "value", "num": 42}'
 
-    def test_model_input_empty(self):
-        """model_input returns empty JSON object for empty input."""
+    def test_payload_empty(self):
+        """payload returns empty JSON object for empty input."""
         result = ToolCallParseResult(id="call_123", name="my_tool", input={})
-        assert result.model_input == "{}"
+        assert result.payload == "{}"
 
-    def test_model_input_error(self):
-        """model_input returns raw content for error parses."""
+    def test_payload_error(self):
+        """payload returns raw content for error parses."""
         result = ToolCallParseResult(
             id="call_456",
             name="unknown_tool",
             input={},
             raw='{"malformed": json}',
         )
-        assert result.model_input == '{"malformed": json}'
+        assert result.payload == '{"malformed": json}'
 
-    def test_model_input_error_empty_raw(self):
-        """model_input returns empty string if raw is empty."""
+    def test_payload_error_empty_raw(self):
+        """payload returns empty string if raw is empty."""
         result = ToolCallParseResult(
             id="call_789",
             name="some_tool",
@@ -84,7 +84,7 @@ class TestToolCallParseResult:
         )
         # Note: empty raw still counts as error (raw is not None)
         assert result.is_error is True
-        assert result.model_input == ""
+        assert result.payload == ""
 
     def test_immutability(self):
         """ToolCallParseResult is frozen."""
