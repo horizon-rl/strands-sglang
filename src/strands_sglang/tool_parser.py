@@ -151,8 +151,8 @@ class HermesToolCallParser(ToolCallParser):
 
     def __init__(
         self,
-        bot_token: str | None = None,
-        eot_token: str | None = None,
+        bot_token: str = DEFAULT_BOT_TOKEN,
+        eot_token: str = DEFAULT_EOT_TOKEN,
     ) -> None:
         """Initialize the parser with optional custom tokens.
 
@@ -160,8 +160,8 @@ class HermesToolCallParser(ToolCallParser):
             bot_token: Custom opening tag (default: "<tool_call>").
             eot_token: Custom closing tag (default: "</tool_call>").
         """
-        self.bot_token = bot_token or self.DEFAULT_BOT_TOKEN
-        self.eot_token = eot_token or self.DEFAULT_EOT_TOKEN
+        self.bot_token = bot_token
+        self.eot_token = eot_token
         self._pattern = re.compile(
             rf"{re.escape(self.bot_token)}\s*(.*?)\s*{re.escape(self.eot_token)}",
             re.DOTALL,
