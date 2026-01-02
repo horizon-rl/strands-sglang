@@ -96,10 +96,9 @@ class ToolCallParser(ABC):
         This is used during incremental tokenization to ensure the TITO
         trajectory matches what `apply_chat_template` would produce.
 
-        Returns:
-            The separator string (default: newline for most models).
+        Default is no separator.
         """
-        return "\n"
+        return ""
 
     @abstractmethod
     def parse(self, text: str) -> list[ToolCallParseResult]:
@@ -189,6 +188,18 @@ class HermesToolCallParser(ToolCallParser):
             rf"{re.escape(self.bot_token)}.*?{re.escape(self.eot_token)}\s*",
             re.DOTALL,
         )
+
+    @property
+    def message_separator(self) -> str:
+        """Separator between messages in the chat template.
+
+        Different tokenizers use different separators between messages.
+        This is used during incremental tokenization to ensure the TITO
+        trajectory matches what `apply_chat_template` would produce.
+
+        Qwen models use newline `\n` as separator between messages.
+        """
+        return "\n"
 
     def strip_markup(self, text: str) -> str:
         """Strip tool call markup from text.
