@@ -99,6 +99,4 @@ class ToolIterationLimiter(HookProvider):
             if any(c.get("toolResult") for c in content):
                 if self.iteration_count >= self.max_iterations:
                     logger.debug(f"Max iterations ({self.max_iterations}) reached, stopping")
-                    raise MaxToolIterationsReachedError(
-                        f"Max iterations ({self.max_iterations}) reached"
-                    )
+                    raise MaxToolIterationsReachedError(f"Max iterations ({self.max_iterations}) reached")
