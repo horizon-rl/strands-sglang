@@ -81,26 +81,7 @@ async def main():
 asyncio.run(main())
 ```
 
-## TITO Data for RL Training
-
-After generation, access trajectory data from `token_manager`:
-
-```python
-# Complete token trajectory (exactly what model saw/generated)
-token_ids = model.token_manager.token_ids
-
-# Loss mask for gradient computation
-# True = model output (include in loss), False = prompt/tool result (exclude)
-loss_mask = model.token_manager.loss_mask
-
-# Log probabilities for policy gradient methods
-logprobs = model.token_manager.logprobs
-
-# Segment info for analysis: [(is_output, length), ...]
-segment_info = model.token_manager.segment_info
-```
-
-### Use with Slime for RL Training
+## RL Training with Slime
 
 For RL training with [Slime](https://github.com/THUDM/slime/), run async rollout:
 
@@ -110,7 +91,8 @@ async def generate(args, sample: Sample, sampling_params) -> Sample:
     # The whole agent loop logic in a few lines
     url = f"http://{args.sglang_router_ip}:{args.sglang_router_port}/generate"
     model = SGLangModel(tokenizer=tokenizer, base_url=url)
-    agent = Agent(model=model, tools=[calculator], system_prompt="...")
+    limiter = ToolIterationLimiter(max_iterations=5)  # Optional: control maximum tool iteration
+    agent = Agent(model=model, tools=[calculator], hooks[limiter], system_prompt="...")
     try:
         await agent.invoke_async(sample.prompt)
         sample.status = Sample.Status.COMPLETED
@@ -126,35 +108,6 @@ async def generate(args, sample: Sample, sampling_params) -> Sample:
 
 A concrete example at Slime's repository will be available later.
 
-## Tool Iteration Limiter
-
-Limit tool iterations to control compute budget during training:
-
-```python
-from strands_sglang import ToolIterationLimiter, MaxToolIterationsReachedError
-
-# Create limiter (max 5 tool-using iterations)
-limiter = ToolIterationLimiter(max_iterations=5)
-
-agent = Agent(
-    model=model,
-    tools=[calculator],
-    hooks=[limiter],  # Register as hook
-)
-
-try:
-    result = await agent.invoke_async("Solve this complex problem...")
-except MaxToolIterationsReachedError:
-    # Trajectory is clean - contains exactly 5 complete iterations
-    print(f"Stopped after {limiter.iteration_count} iterations")
-
-# Reset for next turn 
-limiter.reset()
-model.reset()
-```
-
-**Note:** An "iteration" is one model response that requests tools. Multiple parallel tool calls in one response count as a single iteration.
-
 ## Configuration
 
 ### SGLangModel Options
@@ -166,7 +119,7 @@ model = SGLangModel(
     model_id="Qwen/Qwen3-4B-Thinking-2507",  # Optional: model identifier
     tool_call_parser=HermesToolCallParser(),  # Tool call format parser
     params={                        # Sampling parameters
-        "max_new_tokens": 512,
+        "max_new_tokens": 1024,
         "temperature": 0.7,
         "top_p": 0.9,
     },
@@ -174,6 +127,8 @@ model = SGLangModel(
     return_logprobs=True,           # Return logprobs (default: True)
 )
 ```
+
+> See more sampling params options at [SGLang's `/generate` endpoint](https://docs.sglang.io/basic_usage/sampling_params.html).
 
 ## Testing
 
