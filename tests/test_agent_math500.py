@@ -882,6 +882,11 @@ class TestMessageToTokenDrift:
         )
         reconstructed_tokens = tokenizer.encode(formatted, add_special_tokens=False)
 
+        # Strip trailing newline from reconstructed (chat template formatting, not model output)
+        # The trailing \n has no logprobs and doesn't affect RL training
+        if reconstructed_tokens and reconstructed_tokens[-1] == 198:  # \n token
+            reconstructed_tokens = reconstructed_tokens[:-1]
+
         # Token IDs must match exactly
         assert list(tito_tokens) == list(reconstructed_tokens), (
             f"Message-to-token drift detected!\n"
@@ -903,6 +908,7 @@ class TestMessageToTokenDrift:
         await agent.invoke_async("2+2=?")
         await agent.invoke_async("3+3=?")
 
+        # Get TITO tokens
         tito_tokens = model.token_manager.token_ids
 
         openai_messages = model.format_request_messages(agent.messages, "Brief.")
@@ -915,6 +921,10 @@ class TestMessageToTokenDrift:
             tools=tools,
         )
         reconstructed_tokens = tokenizer.encode(formatted, add_special_tokens=False)
+
+        # Strip trailing newline (chat template formatting, not model output)
+        if reconstructed_tokens and reconstructed_tokens[-1] == 198:
+            reconstructed_tokens = reconstructed_tokens[:-1]
 
         assert list(tito_tokens) == list(reconstructed_tokens), (
             f"Multi-turn message-to-token drift!\n"
@@ -936,6 +946,7 @@ class TestMessageToTokenDrift:
         except MaxTokensReachedException:
             pass
 
+        # Get TITO tokens
         tito_tokens = model.token_manager.token_ids
 
         openai_messages = model.format_request_messages(agent.messages, "Use calculator.")
@@ -948,6 +959,10 @@ class TestMessageToTokenDrift:
             tools=tools,
         )
         reconstructed_tokens = tokenizer.encode(formatted, add_special_tokens=False)
+
+        # Strip trailing newline (chat template formatting, not model output)
+        if reconstructed_tokens and reconstructed_tokens[-1] == 198:
+            reconstructed_tokens = reconstructed_tokens[:-1]
 
         assert list(tito_tokens) == list(reconstructed_tokens), (
             f"Tool use message-to-token drift!\n"
