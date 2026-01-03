@@ -4,27 +4,36 @@ SGLang model provider for [Strands Agents SDK](https://github.com/strands-agents
 
 ## Features
 
-- **SGLang Native**: Utilizes SGLang's native `/generate` endpoint to integrate with Strands Agents SDK for agent loop
-- **Token Management**: Manages tokens and their logprobs to ensure TITO (Token-In/Token-Out) in training.
-- **Tool Parser**: Customizes tool parsing in training to align with model-specific chat template and ensure no *off-policy* post-processing
+- **SGLang Native API**: Uses SGLang's native `/generate` endpoint for efficient token-level generation
+- **TITO Support**: Tracks complete token trajectories with logprobs for RL training - no retokenization drift
+- **Tool Call Parsing**: Customizable tool parsing aligned with model chat templates (Hermes/Qwen format)
+- **Iteration Limiting**: Built-in hook to limit tool iterations with clean trajectory truncation
+- **Multi-turn Support**: Incremental tokenization preserves thinking tokens across conversation turns
+
+## Requirements
+
+- Python 3.10+
+- Strands Agents SDK 1.7.0+
+- SGLang server running with your model
+- HuggingFace tokenizer for the model
 
 ## Installation
 
 ```bash
-pip install strands-sglang
+pip install strands-agents strands-sglang
 ```
 
-Or with development dependencies:
+Or install from source with development dependencies:
 
 ```bash
-git clone <repo>
+git clone https://github.com/anthropics/strands-sglang.git
 cd strands-sglang
 pip install -e ".[dev]"
 ```
 
 ## Quick Start
 
-1. **Start SGLang server**:
+### 1. Start SGLang Server
 
 ```bash
 python -m sglang.launch_server \
@@ -33,7 +42,9 @@ python -m sglang.launch_server \
     --host 0.0.0.0
 ```
 
-2. **Use with Strands Agent**:
+> Tips: There's no need to load SGLang's tool parser because this is for training
+
+### 2. Basic Agent Usage
 
 ```python
 import asyncio
@@ -43,31 +54,29 @@ from strands_tools import calculator
 from strands_sglang import SGLangModel
 
 async def main():
-    # Setup
+    # Initialize model with tokenizer
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B")
     model = SGLangModel(
         tokenizer=tokenizer,
         base_url="http://localhost:8000",
+        model_id="Qwen/Qwen3-4B",
     )
 
-    # Create agent
+    # Create agent with tools
     agent = Agent(
         model=model,
         tools=[calculator],
-        system_prompt="You are a helpful math assistant.",
+        system_prompt="You are a helpful math assistant. Use the calculator for all arithmetic.",
     )
 
     # Run episode
-    model.reset()  # Reset TITO state
-    await agent.invoke_async("What is 25 * 17?")
+    model.reset()  # Reset TITO state for new episode
+    result = await agent.invoke_async("What is 25 * 17?")
+    print(result)
 
     # Access TITO data for RL training
-    token_ids = model.token_manager.token_ids      # All tokens
-    output_mask = model.token_manager.output_mask  # True = model output
-    logprobs = model.token_manager.logprobs        # Log probabilities
-
-    print(f"Trajectory: {len(token_ids)} tokens")
-    print(f"Output tokens: {sum(output_mask)}")
+    print(f"Trajectory: {len(model.token_manager)} tokens")
+    print(f"Output tokens: {sum(model.token_manager.loss_mask)}")
 
 asyncio.run(main())
 ```
@@ -77,22 +86,124 @@ asyncio.run(main())
 After generation, access trajectory data from `token_manager`:
 
 ```python
-# Token trajectory (exactly what model saw/generated)
+# Complete token trajectory (exactly what model saw/generated)
 token_ids = model.token_manager.token_ids
 
-# Loss mask (True = model output, for gradient computation)
-output_mask = model.token_manager.output_mask
+# Loss mask for gradient computation
+# True = model output (include in loss), False = prompt/tool result (exclude)
+loss_mask = model.token_manager.loss_mask
 
-# Log probabilities (for policy gradient)
+# Log probabilities for policy gradient methods
 logprobs = model.token_manager.logprobs
 
-# Segment info: [(is_output, length), ...]
+# Segment info for analysis: [(is_output, length), ...]
 segment_info = model.token_manager.segment_info
 ```
 
-## Running Tests
+### Use with Slime for RL Training
 
-See `tests/README.md` for detailed test configuration.
+For RL training with [Slime](https://github.com/THUDM/slime/), run async rollout:
+
+```python
+async def generate(args, sample: Sample, sampling_params) -> Sample:
+    ...
+    # The whole agent loop logic in a few lines
+    url = f"http://{args.sglang_router_ip}:{args.sglang_router_port}/generate"
+    model = SGLangModel(tokenizer=tokenizer, base_url=url)
+    agent = Agent(model=model, tools=[calculator], system_prompt="...")
+    try:
+        await agent.invoke_async(sample.prompt)
+        sample.status = Sample.Status.COMPLETED
+    except Exception as e:
+        # Use exception to determine TRUNCATED or ABORTED
+        ...
+    # Use model.token_manager to fill in sample's attributes
+    sample.tokens = model.token_manager.token_ids
+    sample.loss_mask = model.token_manager.loss_mask
+    sample.rollout_log_probs = model.token_manager.logprobs
+    ...
+```
+
+A concrete example at Slime's repository will be available later.
+
+## Tool Iteration Limiter
+
+Limit tool iterations to control compute budget during training:
+
+```python
+from strands_sglang import ToolIterationLimiter, MaxToolIterationsReachedError
+
+# Create limiter (max 5 tool-using iterations)
+limiter = ToolIterationLimiter(max_iterations=5)
+
+agent = Agent(
+    model=model,
+    tools=[calculator],
+    hooks=[limiter],  # Register as hook
+)
+
+try:
+    result = await agent.invoke_async("Solve this complex problem...")
+except MaxToolIterationsReachedError:
+    # Trajectory is clean - contains exactly 5 complete iterations
+    print(f"Stopped after {limiter.iteration_count} iterations")
+
+# Reset for next turn 
+limiter.reset()
+model.reset()
+```
+
+**Note:** An "iteration" is one model response that requests tools. Multiple parallel tool calls in one response count as a single iteration.
+
+## Configuration
+
+### SGLangModel Options
+
+```python
+model = SGLangModel(
+    tokenizer=tokenizer,           # Required: HuggingFace tokenizer
+    base_url="http://localhost:8000",  # SGLang server URL
+    model_id="Qwen/Qwen3-4B",      # Optional: model identifier
+    tool_call_parser=HermesToolCallParser(),  # Tool call format parser
+    params={                        # Sampling parameters
+        "max_new_tokens": 512,
+        "temperature": 0.7,
+        "top_p": 0.9,
+    },
+    timeout=300.0,                  # Request timeout in seconds
+    return_logprobs=True,           # Return logprobs (default: True)
+)
+```
+
+## Testing
+
+### Unit Tests
+
+```bash
+pytest tests/unit/ -v
+```
+
+### Integration Tests
+
+Requires a running SGLang server:
+
+```bash
+# Start server first
+python -m sglang.launch_server --model-path Qwen/Qwen3-4B --port 8000
+
+# Run tests
+pytest tests/integration/ -v \
+    --sglang-base-url=http://localhost:8000 \
+    --sglang-model-id=Qwen/Qwen3-4B
+```
+
+Or configure via environment variables:
+
+```bash
+export SGLANG_BASE_URL=http://localhost:8000
+export SGLANG_MODEL_ID=Qwen/Qwen3-4B
+pytest tests/integration/ -v
+```
 
 ## License
 
