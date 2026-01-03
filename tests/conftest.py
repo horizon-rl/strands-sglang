@@ -45,8 +45,8 @@ def pytest_addoption(parser):
     parser.addoption(
         "--sglang-model-id",
         action="store",
-        default=os.environ.get("SGLANG_MODEL_ID", "Qwen/Qwen3-4B-Thinking-2507"),
-        help="Model ID (default: Qwen/Qwen3-4B-Thinking-2507 or SGLANG_MODEL_ID env var)",
+        default=os.environ.get("SGLANG_MODEL_ID", "Qwen/Qwen3-4B-Instruct-2507"),
+        help="Model ID (default: Qwen/Qwen3-4B-Instruct-2507 or SGLANG_MODEL_ID env var)",
     )
 
 

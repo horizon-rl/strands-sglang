@@ -152,8 +152,6 @@ class TestTITO:
 
     async def test_token_count_consistency(self, model):
         """Total tokens equals sum of segment lengths."""
-        model.reset()
-
         messages = [{"role": "user", "content": [{"text": "Count to 5"}]}]
         async for _ in model.stream(messages):
             pass
@@ -168,8 +166,6 @@ class TestTITO:
 
     async def test_incremental_tokenization(self, model):
         """Subsequent calls only tokenize new messages."""
-        model.reset()
-
         # First turn
         messages = [{"role": "user", "content": [{"text": "Hi"}]}]
         async for _ in model.stream(messages):

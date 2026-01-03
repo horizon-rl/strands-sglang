@@ -18,7 +18,7 @@ All tests in this directory are automatically marked as integration tests
 and require a running SGLang server.
 
 Configuration (priority: CLI > env var > default):
-    pytest --sglang-base-url=http://localhost:8000 --sglang-model-id=Qwen/Qwen3-4B-Thinking-2507
+    pytest --sglang-base-url=http://localhost:8000 --sglang-model-id=Qwen/Qwen3-4B-Instruct-2507
     SGLANG_BASE_URL=http://... SGLANG_MODEL_ID=... pytest tests/integration/
 """
 
@@ -50,15 +50,15 @@ def tokenizer(sglang_model_id):
     return AutoTokenizer.from_pretrained(sglang_model_id)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def model(tokenizer, sglang_base_url, sglang_model_id):
-    """Create SGLangModel connected to running server."""
+    """Create fresh SGLangModel for each test (perfect isolation)."""
     return SGLangModel(
         tokenizer=tokenizer,
         tool_call_parser=HermesToolCallParser(),
         base_url=sglang_base_url,
         model_id=sglang_model_id,
-        params={"max_new_tokens": 16384},
+        params={"max_new_tokens": 32768},
     )
 
 

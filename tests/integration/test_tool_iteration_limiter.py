@@ -84,7 +84,7 @@ def fresh_model(tokenizer, sglang_base_url, sglang_model_id):
         tool_call_parser=HermesToolCallParser(),
         base_url=sglang_base_url,
         model_id=sglang_model_id,
-        params={"max_new_tokens": 16384},
+        params={"max_new_tokens": 32768},
     )
 
 
@@ -180,8 +180,6 @@ class TestToolIterationLimiterTrajectory:
             hooks=[limiter],
         )
 
-        fresh_model.reset()
-
         with pytest.raises((MaxToolIterationsReachedError, EventLoopException)):
             await agent.invoke_async(SEQUENTIAL_PROBLEM)
 
@@ -210,8 +208,6 @@ class TestToolIterationLimiterTrajectory:
             system_prompt=SYSTEM_PROMPT,
             hooks=[limiter],
         )
-
-        fresh_model.reset()
 
         with pytest.raises((MaxToolIterationsReachedError, EventLoopException)):
             await agent.invoke_async(SEQUENTIAL_PROBLEM)
