@@ -83,7 +83,7 @@ class TestTokenManagerBasic:
         manager = TokenManager()
         assert manager.tokens == []
         assert manager.token_ids == []
-        assert manager.output_mask == []
+        assert manager.loss_mask == []
         assert manager.logprobs == []
         assert manager.segments == []
         assert manager.segment_info == []
@@ -103,7 +103,7 @@ class TestTokenManagerAddPrompt:
         manager.add_prompt([1, 2, 3])
 
         assert manager.token_ids == [1, 2, 3]
-        assert manager.output_mask == [False, False, False]
+        assert manager.loss_mask == [False, False, False]
         assert manager.logprobs == [None, None, None]
 
     def test_add_prompt_with_logprobs(self):
@@ -138,7 +138,7 @@ class TestTokenManagerAddResponse:
         manager.add_response([4, 5, 6])
 
         assert manager.token_ids == [4, 5, 6]
-        assert manager.output_mask == [True, True, True]
+        assert manager.loss_mask == [True, True, True]
         assert manager.logprobs == [None, None, None]
 
     def test_add_response_with_logprobs(self):
@@ -173,7 +173,7 @@ class TestTokenManagerMultipleSegments:
         manager.add_response([4, 5], logprobs=[-0.1, -0.2])
 
         assert manager.token_ids == [1, 2, 3, 4, 5]
-        assert manager.output_mask == [False, False, False, True, True]
+        assert manager.loss_mask == [False, False, False, True, True]
         assert manager.logprobs == [None, None, None, -0.1, -0.2]
 
     def test_multi_turn_conversation(self):
@@ -190,7 +190,7 @@ class TestTokenManagerMultipleSegments:
         manager.add_response([7, 8], logprobs=[-0.3, -0.4])
 
         assert manager.token_ids == [1, 2, 3, 4, 5, 6, 7, 8]
-        assert manager.output_mask == [False, False, True, True, False, False, True, True]
+        assert manager.loss_mask == [False, False, True, True, False, False, True, True]
         assert manager.logprobs == [None, None, -0.1, -0.2, None, None, -0.3, -0.4]
         assert len(manager) == 8
 
@@ -315,7 +315,7 @@ class TestEdgeCases:
         manager.add_prompt([3])
 
         assert manager.token_ids == [1, 2, 3]
-        assert manager.output_mask == [False, True, False]
+        assert manager.loss_mask == [False, True, False]
 
     def test_logprobs_longer_than_tokens(self):
         """Extra logprobs are ignored (only uses indices up to token count)."""

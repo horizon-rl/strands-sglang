@@ -85,7 +85,7 @@ async def main():
     print(f"Total tokens: {len(token_ids)}")
 
     # Output mask (True = model output, for loss computation)
-    output_mask = model.token_manager.output_mask
+    output_mask = model.token_manager.loss_mask
     n_output = sum(output_mask)
     n_prompt = len(output_mask) - n_output
     print(f"Prompt tokens: {n_prompt} (loss_mask=False)")

@@ -128,8 +128,8 @@ class TokenManager:
         return [token.token_id for token in self.tokens]
 
     @property
-    def output_mask(self) -> list[bool]:
-        """Get output mask for all tokens.
+    def loss_mask(self) -> list[bool]:
+        """Get loss mask for all tokens.
 
         Use this for loss computation in RL training - only compute loss
         on tokens where mask is True (model outputs).
