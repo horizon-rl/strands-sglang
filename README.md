@@ -19,7 +19,7 @@ SGLang model provider for [Strands Agents SDK](https://github.com/strands-agents
 ## Installation
 
 ```bash
-pip install strands-agents strands-sglang
+pip install strands-agents strands-sglang strands-agents-tools
 ```
 
 Or install from source with development dependencies:
