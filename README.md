@@ -59,6 +59,9 @@ async def main():
         tokenizer=tokenizer,
         base_url="http://localhost:8000",
         model_id="Qwen/Qwen3-4B-Thinking-2507",
+        params={
+            "max_new_tokens": 10240,
+        },
     )
 
     # Create agent with tools
