@@ -421,10 +421,16 @@ class SGLangModel(Model):
 
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
-            if status == 400:
+            error_text = e.response.text.lower()
+            logger.warning(f"SGLang threw error (status={status}): {error_text}")
+
+            # Check for context length exceeded (similar to OpenAI's e.code == "context_length_exceeded")
+            if status == 400 and ("exceed" in error_text and "length" in error_text):
                 raise ContextWindowOverflowException(str(e)) from e
+            # Rate limiting / service unavailable
             if status in (429, 503):
                 raise ModelThrottledException(str(e)) from e
+            # Re-raise other errors
             raise
 
         # Update TITO trajectory
