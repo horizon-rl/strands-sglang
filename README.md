@@ -120,15 +120,37 @@ model = SGLangModel(
     base_url="http://localhost:8000",  # SGLang server URL
     model_id="Qwen/Qwen3-4B-Thinking-2507",  # Optional: model identifier
     tool_call_parser=HermesToolCallParser(),  # Tool call format parser
+    client=None,                    # Optional: shared httpx.AsyncClient
     params={                        # Sampling parameters
-        "max_new_tokens": 1024,
+        "max_new_tokens": 10240,
         "temperature": 0.7,
         "top_p": 0.9,
     },
-    timeout=300.0,                  # Request timeout in seconds
+    timeout=600.0,                  # Request timeout (default: 600s like OpenAI)
     return_logprobs=True,           # Return logprobs (default: True)
 )
 ```
+
+### Shared Client for High Concurrency
+
+For high-concurrency workloads, use `create_client` to create a properly configured `httpx.AsyncClient`:
+
+```python
+from strands_sglang import SGLangModel, create_client
+
+# Create shared client with connection pool sized for your concurrency
+client = create_client("http://localhost:8000", max_connections=512)
+
+# Reuse across all concurrent requests
+model = SGLangModel(tokenizer=tokenizer, client=client)
+```
+
+Parameters:
+- `max_connections`: Maximum concurrent connections (default: 1000, aligned with OpenAI)
+- `max_keepalive_connections`: Idle connections kept warm (default: `max_connections // 10`)
+- `timeout`: Request timeout in seconds (default: 600s)
+
+> Tip: Without proper connection limits, you may encounter `PoolTimeout` errors when the default 100-connection pool is exhausted.
 
 > See more sampling params options at SGLang's [documentation](https://docs.sglang.io/basic_usage/sampling_params.html).
 
@@ -178,4 +200,4 @@ Now `git commit` will auto-run linting and formatting checks.
 
 ## License
 
-Apache 2.0
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.

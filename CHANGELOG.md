@@ -9,20 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Shared HTTP Client Support**: Accept optional `client` parameter for connection pooling in high-concurrency scenarios. When running many concurrent requests (e.g., 256 samples per batch in RL training), sharing an `httpx.AsyncClient` significantly reduces connection overhead.
+- **`create_client` Helper** (`client.py`): New helper function for creating `httpx.AsyncClient` with connection pool limits aligned with OpenAI's defaults. Prevents `PoolTimeout` errors in high-concurrency workloads.
 
   ```python
-  import httpx
+  from strands_sglang import SGLangModel, create_client
 
-  # Create shared client for connection pooling
-  client = httpx.AsyncClient(
-      base_url="http://localhost:8000",
-      timeout=httpx.Timeout(600.0, connect=5.0),
-  )
-
-  # Pass to SGLangModel - reused across all requests
+  client = create_client("http://localhost:8000", max_connections=512)
   model = SGLangModel(tokenizer=tokenizer, client=client)
   ```
+
+- **Shared HTTP Client Support**: Accept optional `client` parameter for connection pooling in high-concurrency scenarios. When running many concurrent requests (e.g., 256 samples per batch in RL training), sharing an `httpx.AsyncClient` significantly reduces connection overhead.
 
 ### Changed
 
@@ -33,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Default `max_new_tokens` increased for thinking models that require longer outputs.
 - Documentation: Added `strands-agents-tools` to pip installation path.
+- Documentation: Added connection pool `limits` example to prevent `PoolTimeout` errors in high-concurrency scenarios.
 
 ## [0.0.1] - 2026-01-03
 
