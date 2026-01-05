@@ -353,14 +353,16 @@ class TestConfig:
         assert config["base_url"] == "http://new:8080"
         assert config["model_id"] == "new-model"
 
-    def test_config_with_timeout_tuple(self, mock_tokenizer):
-        """Configuration with timeout tuple."""
-        model = SGLangModel(tokenizer=mock_tokenizer, timeout=(5.0, 60.0))
-        assert model.client.timeout.connect == 5.0
-        assert model.client.timeout.read == 60.0
-
     def test_config_with_timeout_float(self, mock_tokenizer):
-        """Configuration with timeout float."""
-        model = SGLangModel(tokenizer=mock_tokenizer, timeout=30.0)
-        assert model.client.timeout.connect == 30.0
-        assert model.client.timeout.read == 30.0
+        """Configuration with timeout float (connect is always 5.0 like OpenAI)."""
+        model = SGLangModel(tokenizer=mock_tokenizer, timeout=300.0)
+        timeout = model._client_config["timeout"]
+        assert timeout.connect == 5.0  # Fixed like OpenAI
+        assert timeout.read == 300.0
+
+    def test_config_with_default_timeout(self, mock_tokenizer):
+        """Configuration with default timeout (600s like OpenAI)."""
+        model = SGLangModel(tokenizer=mock_tokenizer)
+        timeout = model._client_config["timeout"]
+        assert timeout.connect == 5.0
+        assert timeout.read == 600.0  # Default 10min like OpenAI
