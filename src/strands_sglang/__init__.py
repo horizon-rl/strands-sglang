@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .client import create_client
 from .sglang import SGLangModel
 from .token import Token, TokenManager
 from .tool_limiter import MaxToolIterationsReachedError, ToolIterationLimiter
@@ -24,6 +25,7 @@ from .tool_parser import (
 
 __all__ = [
     "SGLangModel",
+    "create_client",
     "Token",
     "TokenManager",
     "ToolCallParseResult",
