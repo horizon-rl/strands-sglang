@@ -20,7 +20,7 @@ This module provides:
 
 For RL training, you typically want:
 - token_ids: Flat list of all tokens for the trajectory
-- loss_mask: Boolean mask for loss computation (True = model output)
+- loss_mask: Integer mask for loss computation (1 = model output, 0 = prompt/tool)
 - logprobs: Log probabilities for policy gradient
 """
 
@@ -60,7 +60,7 @@ class TokenManager:
         >>> manager.add_prompt([1, 2, 3])
         >>> manager.add_response([4, 5], [0.1, 0.2])
         >>> manager.token_ids      # [1, 2, 3, 4, 5]
-        >>> manager.loss_mask      # [False, False, False, True, True]
+        >>> manager.loss_mask      # [0, 0, 0, 1, 1]
         >>> manager.logprobs       # [None, None, None, 0.1, 0.2]
     """
 
@@ -128,13 +128,13 @@ class TokenManager:
         return [token.token_id for token in self.tokens]
 
     @property
-    def loss_mask(self) -> list[bool]:
-        """Get loss mask for all tokens.
+    def loss_mask(self) -> list[int]:
+        """Get loss mask for all tokens (1 = model output, 0 = prompt/tool).
 
         Use this for loss computation in RL training - only compute loss
-        on tokens where mask is True (model outputs).
+        on tokens where mask is 1 (model outputs).
         """
-        return [token.loss_mask for token in self.tokens]
+        return [int(token.loss_mask) for token in self.tokens]
 
     @property
     def logprobs(self) -> list[float | None]:
