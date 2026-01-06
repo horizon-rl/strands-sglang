@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from strands_sglang.client import RETRYABLE_STATUS_CODES, SGLangClient
+from strands_sglang.client import NON_RETRYABLE_STATUS_CODES, SGLangClient
 
 
 class TestSGLangClientInit:
@@ -54,11 +54,17 @@ class TestSGLangClientInit:
 
 
 class TestRetryableErrors:
-    """Tests for _is_retryable_error method."""
+    """Tests for _is_retryable_error method.
+
+    Aligned with SLIME: retry aggressively on most errors.
+    From OpenAI: 408 (Request Timeout) and 429 (Rate Limited) ARE retried.
+    """
 
     @pytest.fixture
     def client(self):
         return SGLangClient("http://localhost:30000")
+
+    # --- Connection errors (always retryable) ---
 
     def test_connect_error_is_retryable(self, client):
         """ConnectError is retryable."""
@@ -75,31 +81,45 @@ class TestRetryableErrors:
         error = httpx.PoolTimeout("Pool exhausted")
         assert client._is_retryable_error(error) is True
 
-    @pytest.mark.parametrize("status_code", RETRYABLE_STATUS_CODES)
+    def test_generic_exception_is_retryable(self, client):
+        """Generic exceptions are retryable (SLIME philosophy)."""
+        error = ValueError("Something wrong")
+        assert client._is_retryable_error(error) is True
+
+    # --- HTTP 5xx (always retryable) ---
+
+    @pytest.mark.parametrize("status_code", [500, 502, 503, 504, 507, 599])
     def test_5xx_errors_are_retryable(self, client, status_code):
-        """HTTP 5xx errors are retryable."""
+        """All HTTP 5xx errors are retryable."""
         response = MagicMock()
         response.status_code = status_code
         error = httpx.HTTPStatusError("Server error", request=MagicMock(), response=response)
         assert client._is_retryable_error(error) is True
 
-    def test_400_is_not_retryable(self, client):
-        """HTTP 400 is not retryable."""
-        response = MagicMock()
-        response.status_code = 400
-        error = httpx.HTTPStatusError("Bad request", request=MagicMock(), response=response)
-        assert client._is_retryable_error(error) is False
+    # --- HTTP 4xx retryable (from OpenAI) ---
 
-    def test_429_is_not_retryable(self, client):
-        """HTTP 429 is not retryable (rate limit is handled by caller)."""
+    def test_408_request_timeout_is_retryable(self, client):
+        """HTTP 408 (Request Timeout) is retryable (from OpenAI)."""
+        response = MagicMock()
+        response.status_code = 408
+        error = httpx.HTTPStatusError("Request timeout", request=MagicMock(), response=response)
+        assert client._is_retryable_error(error) is True
+
+    def test_429_rate_limit_is_retryable(self, client):
+        """HTTP 429 (Rate Limited) is retryable (from OpenAI)."""
         response = MagicMock()
         response.status_code = 429
         error = httpx.HTTPStatusError("Rate limited", request=MagicMock(), response=response)
-        assert client._is_retryable_error(error) is False
+        assert client._is_retryable_error(error) is True
 
-    def test_generic_exception_is_not_retryable(self, client):
-        """Generic exceptions are not retryable."""
-        error = ValueError("Something wrong")
+    # --- HTTP 4xx non-retryable (client errors) ---
+
+    @pytest.mark.parametrize("status_code", NON_RETRYABLE_STATUS_CODES)
+    def test_client_errors_not_retryable(self, client, status_code):
+        """Client errors (4xx except 408/429) are not retryable."""
+        response = MagicMock()
+        response.status_code = status_code
+        error = httpx.HTTPStatusError("Client error", request=MagicMock(), response=response)
         assert client._is_retryable_error(error) is False
 
 
