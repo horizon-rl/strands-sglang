@@ -4,10 +4,11 @@ SGLang model provider for [Strands Agents SDK](https://github.com/strands-agents
 
 ## Features
 
-- **SGLang Native API**: Uses SGLang's native `/generate` endpoint for efficient token-level generation
+- **SGLang Native API**: Uses SGLang's native `/generate` endpoint with non-streaming POST for optimal parallelism
 - **TITO Support**: Tracks complete token trajectories with logprobs for RL training - no retokenization drift
 - **Tool Call Parsing**: Customizable tool parsing aligned with model chat templates (Hermes/Qwen format)
 - **Iteration Limiting**: Built-in hook to limit tool iterations with clean trajectory truncation
+- **RL Training Optimized**: Connection pooling, aggressive retry (60 attempts), and non-streaming design aligned with [Slime's http_utils.py](https://github.com/THUDM/slime/blob/main/slime/utils/http_utils.py)
 
 ## Requirements
 

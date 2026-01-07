@@ -10,10 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`SGLangClient` Class** (`client.py`): High-level async HTTP client for SGLang server, aligned with [Slime's http_utils.py](https://github.com/THUDM/slime/blob/main/slime/utils/http_utils.py) for RL training stability:
-  - Connection pooling (default 1000 max connections)
+  - Connection pooling (default 1000 max connections, with matching keepalive)
   - Aggressive retry: 60 attempts with 1s delay (like Slime)
   - Infinite timeout by default for long generations (`timeout=None`)
-  - Server-Sent Events (SSE) parsing for streaming responses
+  - Non-streaming POST for better parallelism at scale
 
 - **`SGLangClient.from_slime_args()` Factory Method**: Create client directly from Slime training args with auto-computed `max_connections`:
 
@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Default Port**: Changed from 8000 to 30000 to match SGLang's default.
 - **`SGLangModel` Now Uses `SGLangClient`**: The model uses `SGLangClient` for HTTP communication, providing retry logic and better error handling.
 - **Improved Error Handling**: SGLang HTTP errors now properly raise `ContextWindowOverflowException` for context length errors and `ModelThrottledException` for rate limiting (429/503).
+- **BREAKING: Non-Streaming Only**: `SGLangClient.generate()` now returns `dict[str, Any]` directly instead of an `AsyncGenerator`. This provides ~20x better parallelism for RL training at scale by releasing connections immediately after response.
+
+### Removed
+
+- **Streaming Support**: Removed all streaming/SSE code. Non-streaming POST is now the only mode, aligned with Slime's `http_utils.py` for optimal RL training performance. Streaming held connections open during generation, causing serialization at high concurrency.
+- **`stream` Config Option**: Removed from `SGLangConfig` as streaming is no longer supported.
 
 ### Fixed
 
