@@ -133,12 +133,25 @@ pytest tests/integration/ -v --sglang-base-url=http://localhost:30000
 
 ## Contributing
 
-Contributions welcome! Use `pre-commit` for code style:
+Contributions welcome! Install pre-commit hooks for code style and commit message validation:
 
 ```bash
 pip install -e ".[dev]"
-pre-commit install
+pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/). Commit messages must follow the format:
+
+```
+<type>(<scope>): <description>
+
+# Examples:
+feat(client): add retry backoff configuration
+fix(sglang): handle empty response from server
+docs: update TITO usage examples
+```
+
+Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
 
 ## License
 

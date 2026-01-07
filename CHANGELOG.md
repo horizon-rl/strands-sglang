@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Retries connection errors (`ConnectError`, `PoolTimeout`, `ReadTimeout`)
   - Only non-retryable: permanent client errors (400, 401, 403, 404, 422, etc.)
 
+- **Conventional Commits**: Added `commit-msg` hook via `conventional-pre-commit` to enforce [Conventional Commits](https://www.conventionalcommits.org/) format.
+
 ### Changed
 
 - **Default Port**: Changed from 8000 to 30000 to match SGLang's default.
