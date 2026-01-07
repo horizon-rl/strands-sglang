@@ -20,7 +20,7 @@ SGLang model provider for [Strands Agents SDK](https://github.com/strands-agents
 ## Installation
 
 ```bash
-pip install strands-agents strands-sglang strands-agents-tools
+pip install strands-sglang strands-agents-tools
 ```
 
 Or install from source with development dependencies:
@@ -137,7 +137,7 @@ Contributions welcome! Install pre-commit hooks for code style and commit messag
 
 ```bash
 pip install -e ".[dev]"
-pre-commit install --hook-type pre-commit --hook-type commit-msg
+pre-commit install -t pre-commit -t commit-msg
 ```
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/). Commit messages must follow the format:
