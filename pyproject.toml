@@ -12,7 +12,7 @@ license = "Apache-2.0"
 authors = [
     { name = "Yuan He", email = "yuanhe.cs.ai@gmail.com" }
 ]
-keywords = ["strands", "agents", "sglang", "llm", "ai", "reinforcement-learning", "tito", "token-in-token-out"]
+keywords = ["strands", "agents", "sglang", "llm", "ai", "reinforcement-learning", "rl", "agentic-rl"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
