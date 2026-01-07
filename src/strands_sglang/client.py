@@ -243,12 +243,26 @@ class SGLangClient:
 
                 # Log and retry
                 response_text = e.response.text if isinstance(e, httpx.HTTPStatusError) else None
+                
+                # Use exponential backoff for connection/timeout errors to avoid thundering herd
+                # These errors indicate resource exhaustion - need longer delays with jitter
+                if isinstance(e, (httpx.PoolTimeout, httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError)):
+                    # Exponential backoff: 1s, 2s, 4s, 8s, ... capped at 30s
+                    base_delay = min(self.retry_delay * (2 ** min(attempt, 4)), 30.0)
+                    # Add jitter (±25%) to prevent synchronized retries across many requests
+                    jitter = base_delay * 0.25 * (2 * random.random() - 1)  # Random between -25% and +25%
+                    delay = max(0.1, base_delay + jitter)  # Ensure delay is at least 0.1s
+                else:
+                    # For other errors, use base delay with small jitter to prevent synchronization
+                    jitter = self.retry_delay * 0.1 * (2 * random.random() - 1)  # ±10% jitter
+                    delay = max(0.1, self.retry_delay + jitter)
+                
                 if attempt < self.max_retries:
                     logger.warning(
                         f"SGLang request failed (attempt {attempt + 1}/{self.max_retries + 1}): "
-                        f"{type(e).__name__}: {e}, response={response_text}. Retrying in {self.retry_delay}s..."
+                        f"{type(e).__name__}: {e}, response={response_text}. Retrying in {delay:.2f}s..."
                     )
-                    await asyncio.sleep(self.retry_delay)
+                    await asyncio.sleep(delay)
                 else:
                     logger.error(
                         f"SGLang request failed after {self.max_retries + 1} attempts: "
