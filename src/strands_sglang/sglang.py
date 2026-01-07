@@ -91,7 +91,6 @@ class SGLangModel(Model):
         params: dict[str, Any] | None  # Default sampling parameters
         timeout: float | None  # Request timeout in seconds, or None for infinite (default: None, like SLIME)
         return_logprobs: bool  # Return logprobs for all tokens (default: True)
-        stream: bool  # Stream responses (default: False for better parallelism in RL training)
 
     def __init__(
         self,
@@ -345,7 +344,6 @@ class SGLangModel(Model):
         config = self.get_config()
         sampling_params: dict[str, Any] = dict(config.get("params") or {})
         return_logprobs = config.get("return_logprobs", True)
-        use_streaming = config.get("stream", False)  # Default: non-streaming for better parallelism
         new_input_tokens = self.tokenize_prompt_messages(messages, system_prompt)
         # Tracking token IDs in token_manager to ensure the token-in feature
         input_ids = self.token_manager.token_ids + (new_input_tokens or [])
@@ -354,35 +352,28 @@ class SGLangModel(Model):
         yield {"messageStart": {"role": "assistant"}}
         yield {"contentBlockStart": {"start": {}}}
 
-        # Stream response via SGLangClient
-        prev_text = ""
-        last_output_ids: list[int] = []
-        last_output_logprobs: list[float] | None = None
-        last_input_logprobs: list[float] | None = None
-        last_meta: dict[str, Any] | None = None
-
+        # Call SGLangClient (non-streaming POST for better parallelism)
         client = self._get_client()
         ephemeral_client = self._client is None  # Ephemeral clients are closed after use
 
         try:
-            async for event in client.generate(
+            response = await client.generate(
                 input_ids=input_ids,
                 model=config.get("model_id"),
                 sampling_params=sampling_params,
                 return_logprob=return_logprobs,
-                stream=use_streaming,
-            ):
-                new_text = event.get("text")
-                if isinstance(new_text, str):
-                    delta = new_text[len(prev_text) :] if new_text.startswith(prev_text) else new_text
-                    prev_text = new_text
-                    if delta:
-                        yield {"contentBlockDelta": {"delta": {"text": delta}}}
+            )
 
-                last_output_ids = event.get("output_ids") or last_output_ids
-                last_output_logprobs = self._extract_logprobs(event, "output_token_logprobs") or last_output_logprobs
-                last_input_logprobs = self._extract_logprobs(event, "input_token_logprobs") or last_input_logprobs
-                last_meta = event.get("meta_info") or last_meta
+            # Extract response data
+            text = response.get("text", "")
+            output_ids = response.get("output_ids", [])
+            output_logprobs = self._extract_logprobs(response, "output_token_logprobs")
+            input_logprobs = self._extract_logprobs(response, "input_token_logprobs")
+            meta_info = response.get("meta_info", {})
+
+            # Yield text as single delta (non-streaming gives complete text at once)
+            if text:
+                yield {"contentBlockDelta": {"delta": {"text": text}}}
 
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
@@ -400,40 +391,40 @@ class SGLangModel(Model):
 
         # Update TITO trajectory
         if new_input_tokens:
-            new_input_logprobs = last_input_logprobs[-len(new_input_tokens) :] if last_input_logprobs else None
+            new_input_logprobs = input_logprobs[-len(new_input_tokens) :] if input_logprobs else None
             self.token_manager.add_prompt(token_ids=new_input_tokens, logprobs=new_input_logprobs)
-        if last_output_ids:
-            self.token_manager.add_response(token_ids=last_output_ids, logprobs=last_output_logprobs)
+        if output_ids:
+            self.token_manager.add_response(token_ids=output_ids, logprobs=output_logprobs)
         self._processed_message_count = len(messages) + 1
 
         # End text block, start tool use blocks if there are any tool calls
         yield {"contentBlockStop": {}}
 
         # Parse tool calls and yield events
-        parsed_tool_calls = self.tool_call_parser.parse(prev_text)
+        parsed_tool_calls = self.tool_call_parser.parse(text)
         for event in self._yield_tool_use_events(parsed_tool_calls):
             yield event
 
         # Determine stop reason
         stop_reason: str = "tool_use" if parsed_tool_calls else "end_turn"
-        if last_meta and isinstance(last_meta.get("finish_reason"), dict):
-            if last_meta["finish_reason"].get("type") == "length":
+        if meta_info and isinstance(meta_info.get("finish_reason"), dict):
+            if meta_info["finish_reason"].get("type") == "length":
                 stop_reason = "max_tokens"
 
         yield {"messageStop": {"stopReason": cast(Any, stop_reason)}}
 
         # Yield usage metadata
-        if last_meta:
-            input_tokens = int(last_meta.get("prompt_tokens") or 0)
-            output_tokens = int(last_meta.get("completion_tokens") or 0)
+        if meta_info:
+            prompt_tokens = int(meta_info.get("prompt_tokens") or 0)
+            completion_tokens = int(meta_info.get("completion_tokens") or 0)
             yield {
                 "metadata": {
                     "usage": {
-                        "inputTokens": input_tokens,
-                        "outputTokens": output_tokens,
-                        "totalTokens": input_tokens + output_tokens,
+                        "inputTokens": prompt_tokens,
+                        "outputTokens": completion_tokens,
+                        "totalTokens": prompt_tokens + completion_tokens,
                     },
-                    "metrics": {"latencyMs": int(float(last_meta.get("e2e_latency") or 0) * 1000)},
+                    "metrics": {"latencyMs": int(float(meta_info.get("e2e_latency") or 0) * 1000)},
                 }
             }
 

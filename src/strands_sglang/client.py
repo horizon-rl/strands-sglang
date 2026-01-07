@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""SGLang HTTP client with connection pooling, retry logic, and SSE parsing.
+"""SGLang HTTP client with connection pooling and retry logic.
 
 Aligned with SLIME's http_utils.py for RL training stability:
 - Aggressive retry (60 attempts by default)
 - Retries on all transient errors (like SLIME)
 - Infinite timeout by default for long generations
+- Non-streaming POST for better parallelism (no SSE overhead)
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from typing import Any, AsyncGenerator
+from typing import Any
 
 import httpx
 
@@ -46,10 +46,13 @@ class SGLangClient:
     Designed for RL training stability with aggressive retry on transient errors.
     Aligned with SLIME's http_utils.py approach.
 
+    Uses non-streaming POST requests for better parallelism in high-concurrency
+    training scenarios (no SSE overhead, connections released immediately).
+
     Example:
         >>> async with SGLangClient("http://localhost:30000") as client:
-        ...     async for event in client.generate(input_ids=[1, 2, 3]):
-        ...         print(event)
+        ...     result = await client.generate(input_ids=[1, 2, 3])
+        ...     print(result["text"])
 
         >>> # For RL training with infinite timeout (like SLIME):
         >>> client = SGLangClient("http://localhost:30000", timeout=None)
@@ -146,25 +149,6 @@ class SGLangClient:
         """Exit async context manager."""
         await self.close()
 
-    async def _iter_sse_events(self, response: httpx.Response) -> AsyncGenerator[dict[str, Any], None]:
-        """Parse Server-Sent Events from streaming response.
-
-        SSE format: lines starting with "data:" contain JSON payloads.
-        Stream ends with "data: [DONE]".
-        """
-        async for line in response.aiter_lines():
-            if not line or not line.startswith("data:"):
-                continue
-
-            data = line[5:].strip()  # len("data:") = 5
-            if data == "[DONE]":
-                break
-
-            try:
-                yield json.loads(data)
-            except json.JSONDecodeError:
-                continue
-
     def _is_retryable_error(self, e: Exception) -> bool:
         """Check if an error is retryable.
 
@@ -191,9 +175,12 @@ class SGLangClient:
         sampling_params: dict[str, Any] | None = None,
         return_logprob: bool = True,
         logprob_start_len: int = 0,
-        stream: bool = False,
-    ) -> AsyncGenerator[dict[str, Any], None]:
+    ) -> dict[str, Any]:
         """Generate from SGLang `/generate` endpoint.
+
+        Uses non-streaming POST for better parallelism in RL training.
+        Connections are released immediately after response, enabling
+        high concurrency without SSE overhead.
 
         Args:
             input_ids: Input token IDs.
@@ -201,11 +188,9 @@ class SGLangClient:
             sampling_params: Sampling parameters (temperature, top_p, max_new_tokens, etc.).
             return_logprob: Whether to return log probabilities (default: True).
             logprob_start_len: Start position for logprob computation (default: 0).
-            stream: Whether to stream responses (default: False for better parallelism).
 
-        Yields:
-            For streaming: Parsed SSE events containing text, output_ids, logprobs, and metadata.
-            For non-streaming: Single response dict with complete generation result.
+        Returns:
+            Response dict with text, output_ids, meta_info (logprobs, finish_reason, etc.).
 
         Raises:
             httpx.HTTPStatusError: For non-retryable client errors (400, 401, 403, etc.)
@@ -214,7 +199,7 @@ class SGLangClient:
         """
         payload: dict[str, Any] = {
             "input_ids": input_ids,
-            "stream": stream,
+            "stream": False,  # Always non-streaming for RL training
         }
 
         if model:
@@ -231,21 +216,9 @@ class SGLangClient:
 
         for attempt in range(self.max_retries + 1):
             try:
-                if stream:
-                    # Streaming mode: parse SSE events
-                    async with self._client.stream("POST", "/generate", json=payload) as response:
-                        response.raise_for_status()
-                        async for event in self._iter_sse_events(response):
-                            yield event
-                        return  # Success, exit retry loop
-                else:
-                    # Non-streaming mode: single JSON response (better for high concurrency)
-                    response = await self._client.post("/generate", json=payload)
-                    response.raise_for_status()
-                    # JSON decode - if it fails, exception propagates to retry logic
-                    output = response.json()
-                    yield output
-                    return  # Success, exit retry loop
+                response = await self._client.post("/generate", json=payload)
+                response.raise_for_status()
+                return response.json()
 
             except Exception as e:
                 last_error = e
@@ -272,6 +245,9 @@ class SGLangClient:
         # Should not reach here, but just in case
         if last_error:
             raise last_error
+
+        # This should never happen, but satisfies type checker
+        raise RuntimeError("Unexpected state in generate()")
 
     async def health(self) -> bool:
         """Check if SGLang server is healthy.
