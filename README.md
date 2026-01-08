@@ -1,5 +1,9 @@
 # strands-sglang
 
+[![CI](https://github.com/horizon-rl/strands-sglang/actions/workflows/test.yml/badge.svg)](https://github.com/horizon-rl/strands-sglang/actions/workflows/test.yml)
+[![PyPI](https://img.shields.io/pypi/v/strands-sglang.svg)](https://pypi.org/project/strands-sglang/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 SGLang model provider for [Strands Agents SDK](https://github.com/strands-agents/sdk-python) with Token-In/Token-Out (TITO) support for agentic RL training.
 
 ## Features
@@ -26,7 +30,7 @@ pip install strands-sglang strands-agents-tools
 Or install from source with development dependencies:
 
 ```bash
-git clone https://github.com/anthropics/strands-sglang.git
+git clone https://github.com/horizon-rl/strands-sglang.git
 cd strands-sglang
 pip install -e ".[dev]"
 ```
