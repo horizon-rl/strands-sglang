@@ -73,51 +73,63 @@ asyncio.run(main())
 For RL training with [Slime](https://github.com/THUDM/slime/), `SGLangModel` with TITO eliminates the retokenization step in [`generate_with_strands.py`](https://github.com/THUDM/slime/blob/main/examples/strands-agents/generate_with_strands.py) (this example is not fully ready yet):
 
 ```python
-from strands import Agent
+from strands import Agent, tool
 from strands_sglang import SGLangClient, SGLangModel, ToolIterationLimiter
 from slime.utils.types import Sample
 
-SYSTEM_PROMPT = "..."  # Your system prompt
+SYSTEM_PROMPT = "..."
+MAX_TOOL_ITERATIONS= ... # e.g., 5
+
+@tool
+def execute_python_code(code: str):
+    """Execute Python code and return the output."""
+    ...
 
 async def generate(args, sample: Sample, sampling_params) -> Sample:
-    ...
+    """Generate with TITO: tokens captured during generation, no retokenization."""
+    assert not args.partial_rollout, "Partial rollout not supported."
+
     state = GenerateState(args)
 
-    # Create client and model with TITO tracking
-    client = SGLangClient.from_slime_args(args)
+    # Set up Agent with SGLangModel and ToolIterationLimiter hook
     model = SGLangModel(
         tokenizer=state.tokenizer,
-        client=client,
-        params={"max_new_tokens": sampling_params["max_new_tokens"], ...},
+        client=get_client(args),
+        model_id=args.hf_checkpoint.split("/")[-1],
+        params={k: sampling_params[k] for k in ["max_new_tokens", "temperature", "top_p"]},
     )
+    limiter = ToolIterationLimiter(max_iterations=MAX_TOOL_ITERATIONS)
     agent = Agent(
         model=model,
-        tools=[...],  # Your tools
-        hooks=[ToolIterationLimiter(max_iterations=...)],
+        tools=[execute_python_code],
+        hooks=[limiter],
+        callback_handler=None,
         system_prompt=SYSTEM_PROMPT,
     )
 
-    # Run agent
-    model.reset()
+    # Run Agent Loop
+    prompt = sample.prompt if isinstance(sample.prompt, str) else sample.prompt[0]["content"]
     try:
-        await agent.invoke_async(sample.prompt)
+        await agent.invoke_async(prompt)
         sample.status = Sample.Status.COMPLETED
     except Exception as e:
-        # Define what truncation exceptions look like
-        if _is_truncation_error(e):
-            sample.status = Sample.Status.TRUNCATED
-        else:
-            sample.status = Sample.Status.ABORTED
+        # Always use TRUNCATED instead of ABORTED because Slime doesn't properly
+        # handle ABORTED samples in reward processing. See: https://github.com/THUDM/slime/issues/200
+        sample.status = Sample.Status.TRUNCATED
+        logger.warning(f"TRUNCATED: {type(e).__name__}: {e}")
 
-    # TITO: No retokenization needed - tokens tracked during generation
-    prompt_len = len(model.token_manager.segments[0])  # system + user are first segment
-    sample.tokens = model.token_manager.token_ids
-    sample.loss_mask = model.token_manager.loss_mask[prompt_len:]
-    sample.rollout_log_probs = model.token_manager.logprobs[prompt_len:]
+    # TITO: extract trajectory from token_manager
+    tm = model.token_manager
+    prompt_len = len(tm.segments[0])  # system + user are first segment
+    sample.tokens = tm.token_ids
+    sample.loss_mask = tm.loss_mask[prompt_len:]
+    sample.rollout_log_probs = tm.logprobs[prompt_len:]
     sample.response_length = len(sample.tokens) - prompt_len
     sample.response = model.tokenizer.decode(sample.tokens[prompt_len:], skip_special_tokens=False)
-    ...
 
+    # Cleanup and return
+    model.reset()
+    agent.cleanup()
     return sample
 ```
 
