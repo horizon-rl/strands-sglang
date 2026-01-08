@@ -1,4 +1,4 @@
-# strands-sglang
+# Strands-SGLang
 
 [![CI](https://github.com/horizon-rl/strands-sglang/actions/workflows/test.yml/badge.svg)](https://github.com/horizon-rl/strands-sglang/actions/workflows/test.yml)
 [![PyPI](https://img.shields.io/pypi/v/strands-sglang.svg)](https://pypi.org/project/strands-sglang/)
