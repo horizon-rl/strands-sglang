@@ -14,8 +14,6 @@
 
 """Unit tests for token module."""
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from strands_sglang import Token, TokenManager
@@ -66,17 +64,10 @@ class TestToken:
 class TestTokenManagerBasic:
     """Basic TokenManager tests."""
 
-    def test_init_without_tokenizer(self):
-        """TokenManager can be created without tokenizer."""
+    def test_init(self):
+        """TokenManager can be created."""
         manager = TokenManager()
-        assert manager.tokenizer is None
         assert len(manager) == 0
-
-    def test_init_with_tokenizer(self):
-        """TokenManager can be created with tokenizer."""
-        tokenizer = MagicMock()
-        manager = TokenManager(tokenizer=tokenizer)
-        assert manager.tokenizer is tokenizer
 
     def test_empty_manager(self):
         """Empty manager returns empty lists."""
@@ -254,31 +245,6 @@ class TestTokenManagerReset:
 
         assert manager.token_ids == [10, 20, 30]
         assert len(manager) == 3
-
-
-class TestTokenManagerDecode:
-    """Tests for decode functionality."""
-
-    def test_decode_with_tokenizer(self):
-        """decode works when tokenizer is available."""
-        tokenizer = MagicMock()
-        tokenizer.decode.return_value = "hello"
-
-        manager = TokenManager(tokenizer=tokenizer)
-        token = Token(token_id=42)
-
-        result = manager.decode(token)
-
-        assert result == "hello"
-        tokenizer.decode.assert_called_once_with([42])
-
-    def test_decode_without_tokenizer(self):
-        """decode raises error when no tokenizer."""
-        manager = TokenManager()
-        token = Token(token_id=42)
-
-        with pytest.raises(ValueError, match="No tokenizer available"):
-            manager.decode(token)
 
 
 class TestTokenManagerTokensProperty:

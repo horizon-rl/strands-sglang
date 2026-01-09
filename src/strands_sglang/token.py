@@ -27,10 +27,6 @@ For RL training, you typically want:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from transformers import PreTrainedTokenizerBase
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +52,7 @@ class TokenManager:
     - RESPONSE: Model outputs (loss_mask=True)
 
     Example:
-        >>> manager = TokenManager(tokenizer)
+        >>> manager = TokenManager()
         >>> manager.add_prompt([1, 2, 3])
         >>> manager.add_response([4, 5], [0.1, 0.2])
         >>> manager.token_ids      # [1, 2, 3, 4, 5]
@@ -64,13 +60,8 @@ class TokenManager:
         >>> manager.logprobs       # [None, None, None, 0.1, 0.2]
     """
 
-    def __init__(self, tokenizer: PreTrainedTokenizerBase | None = None) -> None:
-        """Create a TokenManager.
-
-        Args:
-            tokenizer: Optional HuggingFace tokenizer for decoding tokens.
-        """
-        self.tokenizer = tokenizer
+    def __init__(self) -> None:
+        """Create a TokenManager."""
         self._segments: list[list[Token]] = []
 
     def reset(self) -> None:
@@ -154,22 +145,6 @@ class TokenManager:
             List of (is_output, segment_length) tuples.
         """
         return [(seg[0].loss_mask if seg else False, len(seg)) for seg in self._segments]
-
-    def decode(self, token: Token) -> str:
-        """Decode a single token to text.
-
-        Args:
-            token: Token to decode.
-
-        Returns:
-            Decoded text string.
-
-        Raises:
-            ValueError: If no tokenizer is available.
-        """
-        if self.tokenizer is None:
-            raise ValueError("No tokenizer available for decoding")
-        return self.tokenizer.decode([token.token_id])
 
     def __len__(self) -> int:
         """Return total number of tokens."""

@@ -129,7 +129,7 @@ class SGLangModel(Model):
         self.config["base_url"] = base_url
 
         # TITO state
-        self.token_manager = TokenManager(tokenizer)
+        self.token_manager = TokenManager()
         self._processed_message_count: int = 0
         self._current_tools: list[dict] | None = None
 
