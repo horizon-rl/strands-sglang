@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-01-08
+
 ### Added
 
 - **Qwen3 Hybrid Thinking Mode Support**: Added `enable_thinking` config option for Qwen3 hybrid thinking models. This is passed to `apply_chat_template` to control whether the model uses its internal reasoning mode with `<think>` tokens. Default is `None` (not passed to template) to avoid affecting non-Qwen3 models.
@@ -22,9 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model = SGLangModel(tokenizer=tokenizer)
   ```
 
+- **Related Projects**: Added [strands-vllm](https://github.com/agents-community/strands-vllm) to README as a community vLLM provider inspired by this project.
+
 ### Changed
 
+- **Simplified TokenManager API**: Removed `tokenizer` parameter from `TokenManager.__init__()` and removed the `decode()` method. The tokenizer was only used for single-token decoding which was never used in practice—all real usage calls `model.tokenizer.decode()` directly for batch decoding with options like `skip_special_tokens`.
+
 - **Message Formatting Methods**: Converted `_format_message_content` and `format_request_messages` to `@classmethod` since they don't use instance state. This clarifies intent and allows calling without an instance.
+
+### Fixed
 
 - **SLIME-Aligned Retry for Local Servers**: Changed retry behavior to match SLIME's aggressive retry philosophy for local SGLang servers during RL training:
   - 400 errors are now **retried** (can be transient during weight reloading, memory pressure)
