@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__version__ = "0.0.2"
-
 from .client import SGLangClient
 from .sglang import SGLangModel
 from .token import Token, TokenManager
@@ -26,8 +24,6 @@ from .tool_parser import (
 )
 
 __all__ = [
-    # Version
-    "__version__",
     # Client
     "SGLangClient",
     # Model
