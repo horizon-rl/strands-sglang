@@ -6,6 +6,8 @@
 
 SGLang model provider for [Strands Agents SDK](https://github.com/strands-agents/sdk-python) with Token-In/Token-Out (TITO) rollouts for on-policy agentic RL training (no retokenization drift).
 
+> ✅ **Featured in Strands Agents Docs**: [Community Model Provider: SGLang](https://strandsagents.com/latest/documentation/docs/community/model-providers/sglang/)
+
 ## Features
 
 This package is designed to make the serving-oriented agent scaffold [Strands Agents SDK](https://github.com/strands-agents/sdk-python) training-ready by exposing end-to-end, token-level rollouts from SGLang while reusing Strands’ customizable agent loop.
