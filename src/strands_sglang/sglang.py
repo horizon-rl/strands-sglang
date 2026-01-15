@@ -188,12 +188,15 @@ class SGLangModel(Model):
         markup to maintain exact generation order for TITO reconstruction.
         Modifies the message in-place.
         """
-        # Flatten content from [{"type": "text", "text": "..."}] to "..."
+        # Flatten content from [{"text": "..."}, ...] to "..."
+        # Find first text block (content array may have other block types)
         if "content" in message and isinstance(message["content"], list):
-            if len(message["content"]) > 0 and "text" in message["content"][0]:
-                message["content"] = message["content"][0]["text"]
-            else:
-                message["content"] = ""
+            text_content = ""
+            for block in message["content"]:
+                if "text" in block:
+                    text_content = block["text"]
+                    break
+            message["content"] = text_content
 
         # Remove strands-processed tool_calls field and let the chat template handle it.
         if "tool_calls" in message:
