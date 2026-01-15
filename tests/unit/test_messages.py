@@ -276,6 +276,56 @@ class TestFormatRequestMessages:
         # Current implementation takes first text block
         assert result[0]["content"] == "First block."
 
+    def test_text_block_found_among_other_blocks(self, model):
+        """Text block is found even when other block types exist.
+
+        Content arrays may contain various block types (text, toolUse,
+        reasoningContent, etc). We find the first text block regardless
+        of position. Note: reasoningContent is Bedrock-specific and is
+        handled separately in RufusGym, not here.
+        """
+        messages = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "reasoningContent": {
+                            "reasoningText": {"text": "This is reasoning"}
+                        }
+                    },
+                    {"text": "The actual response content"},
+                ],
+            }
+        ]
+        result = model.format_request_messages(messages)
+
+        # Should find the text block (reasoningContent handling is done in RufusGym)
+        assert result[0]["content"] == "The actual response content"
+
+    def test_only_reasoning_content_returns_empty(self, model):
+        """Message with only reasoningContent (no text) returns empty string.
+
+        reasoningContent is Bedrock-specific. SGLangModel just finds the text
+        block - Bedrock-specific reconstruction is done in RufusGym.
+        """
+        messages = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "reasoningContent": {
+                            "reasoningText": {"text": "Thinking..."}
+                        }
+                    },
+                ],
+            }
+        ]
+        result = model.format_request_messages(messages)
+
+        # OpenAI formatter may filter out the message entirely, or empty content
+        if len(result) > 0:
+            assert result[0]["content"] == ""
+
     # --- Custom Parser Tokens ---
 
     def test_custom_tokens_preserved(self, mock_tokenizer):
