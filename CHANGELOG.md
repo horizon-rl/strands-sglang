@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Think Block Exclusion in Tool Parser**: `HermesToolCallParser` now excludes tool calls inside `<think>...</think>` blocks by default. This prevents parsing draft/planning tool calls that reasoning models (Qwen3 with thinking, DeepSeek-R1, etc.) may output during chain-of-thought reasoning.
+
+  ```python
+  # Default behavior: excludes <think> blocks
+  parser = HermesToolCallParser()
+
+  # Custom think tokens (e.g., for models using <reasoning>)
+  parser = HermesToolCallParser(
+      think_start_token="<reasoning>",
+      think_end_token="</reasoning>",
+  )
+
+  # Disable exclusion (parse all tool calls including those in think blocks)
+  parser = HermesToolCallParser(think_start_token=None)
+  ```
+
+  This is **backward compatible**—non-thinking models are unaffected since they don't output `<think>` tags.
+
 ## [0.1.0] - 2026-01-20
 
 First beta release. The library is now considered stable for production use in agentic RL training.
