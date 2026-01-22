@@ -287,7 +287,7 @@ class SGLangModel(Model):
 
         # Subsequent calls: only new messages
         if len(messages) > self._processed_message_count:
-            new_messages = messages[self._processed_message_count :]
+            new_messages = self._sort_tool_results(messages[self._processed_message_count :])
             formatted = self.format_prompt(new_messages)
 
             # Prepend message separator to align with chat template.
@@ -299,6 +299,23 @@ class SGLangModel(Model):
             return self.tokenizer.encode(formatted, add_special_tokens=False)
 
         return None
+
+    def _sort_tool_results(self, messages: Messages) -> Messages:
+        """Sort tool results by ID to match original call order (IDs are sequential: call_0000, call_0001, ...)."""
+        result = []
+        for msg in messages:
+            if msg.get("role") != "user" or not isinstance(msg.get("content"), list):
+                result.append(msg)
+                continue
+            content = msg["content"]
+            tool_results = [b for b in content if isinstance(b, dict) and "toolResult" in b]
+            if not tool_results:
+                result.append(msg)
+                continue
+            other = [b for b in content if not (isinstance(b, dict) and "toolResult" in b)]
+            tool_results.sort(key=lambda b: b.get("toolResult", {}).get("toolUseId", ""))
+            result.append({**msg, "content": other + tool_results})
+        return result
 
     def _yield_tool_use_events(
         self,

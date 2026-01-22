@@ -400,6 +400,23 @@ class TestHermesToolCallParser:
         assert results[0].id.startswith("call_")
         assert results[1].id.startswith("call_")
 
+    def test_sequential_ids_are_sortable(self, parser):
+        """Tool call IDs are sequential and sortable for result ordering."""
+        text = """
+        <tool_call>{"name": "first", "arguments": {}}</tool_call>
+        <tool_call>{"name": "second", "arguments": {}}</tool_call>
+        <tool_call>{"name": "third", "arguments": {}}</tool_call>
+        """
+        results = parser.parse(text)
+
+        assert len(results) == 3
+        # IDs should be sequential: call_0000, call_0001, call_0002
+        assert results[0].id == "call_0000"
+        assert results[1].id == "call_0001"
+        assert results[2].id == "call_0002"
+        # String comparison should preserve order
+        assert results[0].id < results[1].id < results[2].id
+
     # --- Think Block Exclusion ---
 
     def test_exclude_tool_calls_inside_think_block(self, parser):

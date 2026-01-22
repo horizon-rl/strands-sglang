@@ -29,7 +29,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -38,11 +37,6 @@ logger = logging.getLogger(__name__)
 
 # Fallback tool name when we can't identify which tool the model tried to call
 UNKNOWN_TOOL_NAME = "unknown_tool"
-
-
-def _make_tool_call_id() -> str:
-    """Generate a unique tool call ID."""
-    return f"call_{uuid.uuid4().hex[:8]}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,9 +217,9 @@ class HermesToolCallParser(ToolCallParser):
 
         tool_calls: list[ToolCallParseResult] = []
 
-        for match in self._pattern.finditer(text):
+        for i, match in enumerate(self._pattern.finditer(text)):
             raw_content = match.group(1).strip()
-            tool_call_id = _make_tool_call_id()
+            tool_call_id = f"call_{i:04d}"  # Sequential IDs for sortability
 
             # Only handle JSONDecodeError - let Strands validate the rest
             try:

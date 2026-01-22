@@ -322,3 +322,99 @@ class TestConfig:
         """Configuration with default timeout (None = infinite, like SLIME)."""
         model = SGLangModel(tokenizer=mock_tokenizer)
         assert model._timeout is None  # Infinite timeout by default
+
+
+class TestSortToolResults:
+    """Tests for _sort_tool_results method."""
+
+    def test_sort_by_sequential_id(self, model):
+        """Tool results are sorted by sequential ID (call_0000 < call_0001 < call_0002)."""
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"toolResult": {"toolUseId": "call_0002", "content": [{"text": "third"}]}},
+                    {"toolResult": {"toolUseId": "call_0000", "content": [{"text": "first"}]}},
+                    {"toolResult": {"toolUseId": "call_0001", "content": [{"text": "second"}]}},
+                ],
+            },
+        ]
+
+        sorted_msgs = model._sort_tool_results(messages)
+
+        results = sorted_msgs[0]["content"]
+        assert results[0]["toolResult"]["toolUseId"] == "call_0000"
+        assert results[1]["toolResult"]["toolUseId"] == "call_0001"
+        assert results[2]["toolResult"]["toolUseId"] == "call_0002"
+
+    def test_preserves_non_tool_messages(self, model):
+        """Non-tool messages pass through unchanged."""
+        messages = [
+            {"role": "assistant", "content": [{"text": "Hello"}]},
+            {"role": "user", "content": [{"text": "Hi"}]},
+        ]
+
+        sorted_msgs = model._sort_tool_results(messages)
+
+        assert sorted_msgs == messages
+
+    def test_preserves_other_content_blocks(self, model):
+        """Non-toolResult blocks are preserved (moved to front)."""
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"toolResult": {"toolUseId": "call_0001", "content": [{"text": "b"}]}},
+                    {"text": "some context"},
+                    {"toolResult": {"toolUseId": "call_0000", "content": [{"text": "a"}]}},
+                ],
+            },
+        ]
+
+        sorted_msgs = model._sort_tool_results(messages)
+
+        content = sorted_msgs[0]["content"]
+        assert content[0] == {"text": "some context"}  # Other blocks first
+        assert content[1]["toolResult"]["toolUseId"] == "call_0000"
+        assert content[2]["toolResult"]["toolUseId"] == "call_0001"
+
+    def test_empty_messages(self, model):
+        """Empty messages list returns empty."""
+        assert model._sort_tool_results([]) == []
+
+    def test_no_tool_results(self, model):
+        """Messages without toolResults pass through unchanged."""
+        messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+
+        sorted_msgs = model._sort_tool_results(messages)
+
+        assert sorted_msgs == messages
+
+    def test_mixed_message_types(self, model):
+        """Mixed assistant + user messages: only user tool results are sorted."""
+        messages = [
+            {"role": "assistant", "content": [{"text": "I'll call some tools"}]},
+            {
+                "role": "user",
+                "content": [
+                    {"toolResult": {"toolUseId": "call_0001", "content": [{"text": "b"}]}},
+                    {"toolResult": {"toolUseId": "call_0000", "content": [{"text": "a"}]}},
+                ],
+            },
+        ]
+
+        sorted_msgs = model._sort_tool_results(messages)
+
+        # Assistant message unchanged
+        assert sorted_msgs[0] == messages[0]
+        # User tool results sorted
+        assert sorted_msgs[1]["content"][0]["toolResult"]["toolUseId"] == "call_0000"
+        assert sorted_msgs[1]["content"][1]["toolResult"]["toolUseId"] == "call_0001"
+
+    def test_user_message_with_string_content(self, model):
+        """User message with string content (not list) passes through unchanged."""
+        messages = [{"role": "user", "content": "plain text message"}]
+
+        sorted_msgs = model._sort_tool_results(messages)
+
+        assert sorted_msgs == messages
