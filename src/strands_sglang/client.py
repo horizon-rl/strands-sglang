@@ -276,3 +276,15 @@ class SGLangClient:
             return response.status_code == 200
         except httpx.HTTPError:
             return False
+
+    async def get_model_info(self) -> dict[str, Any]:
+        """Get model information from the SGLang server.
+
+        Returns:
+            Dict containing model info from `/get_model_info` endpoint. Important fields include:
+            - model_path: HuggingFace model ID or local path
+            - tokenizer_path: Tokenizer path (may differ from model_path)
+        """
+        response = await self._client.get("/get_model_info")
+        response.raise_for_status()
+        return response.json()
