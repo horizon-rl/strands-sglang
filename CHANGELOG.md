@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Model Info Getter**: Native `get_model_info()` for SGLang client.
+
 - **Think Block Exclusion**: `HermesToolCallParser` excludes tool calls inside `<think>` blocks by default, preventing parsing of draft tool calls from reasoning models (Qwen3, DeepSeek-R1). Configurable via `think_start_token`/`think_end_token`.
 
 - **Tool Result Ordering**: Tool results are now sorted by sequential IDs (`call_0000`, `call_0001`, ...) before tokenization. Fixes ordering issues when Strands executes tools concurrently and returns results in completion order.
