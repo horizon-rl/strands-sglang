@@ -126,19 +126,19 @@ class TestTokenManagerAddResponse:
     def test_add_response_basic(self):
         """add_response adds tokens with loss_mask=True."""
         manager = TokenManager()
+        manager.add_prompt([1])
         manager.add_response([4, 5, 6])
 
-        assert manager.token_ids == [4, 5, 6]
-        assert manager.loss_mask == [True, True, True]
-        assert manager.logprobs == [None, None, None]
+        assert manager.token_ids == [1, 4, 5, 6]
+        assert manager.loss_mask == [False, True, True, True]
 
     def test_add_response_with_logprobs(self):
         """add_response accepts logprobs."""
         manager = TokenManager()
+        manager.add_prompt([1])
         manager.add_response([100, 200], logprobs=[-0.5, -0.6])
 
-        assert manager.token_ids == [100, 200]
-        assert manager.logprobs == [-0.5, -0.6]
+        assert manager.logprobs[1:] == [-0.5, -0.6]
 
     def test_add_response_empty(self):
         """add_response with empty list does nothing."""
@@ -146,12 +146,19 @@ class TestTokenManagerAddResponse:
         manager.add_response([])
         assert len(manager) == 0
 
+    def test_add_response_without_prompt_raises(self):
+        """add_response raises RuntimeError if no prompt segment exists."""
+        manager = TokenManager()
+        with pytest.raises(RuntimeError, match="First segment must be a prompt"):
+            manager.add_response([4, 5, 6])
+
     def test_add_response_partial_logprobs(self):
         """add_response handles partial logprobs gracefully."""
         manager = TokenManager()
+        manager.add_prompt([0])
         manager.add_response([1, 2, 3], logprobs=[-0.1, -0.2])
 
-        assert manager.logprobs == [-0.1, -0.2, None]
+        assert manager.logprobs[1:] == [-0.1, -0.2, None]
 
 
 class TestTokenManagerMultipleSegments:
@@ -197,6 +204,22 @@ class TestTokenManagerMultipleSegments:
         assert len(segments[1]) == 2
         assert all(not t.loss_mask for t in segments[0])
         assert all(t.loss_mask for t in segments[1])
+
+    def test_initial_prompt(self):
+        """initial_prompt returns the first segment."""
+        manager = TokenManager()
+        manager.add_prompt([1, 2, 3])
+        manager.add_response([4, 5])
+
+        prompt = manager.initial_prompt
+        assert len(prompt) == 3
+        assert [t.token_id for t in prompt] == [1, 2, 3]
+        assert all(not t.loss_mask for t in prompt)
+
+    def test_initial_prompt_empty(self):
+        """initial_prompt returns empty list when no segments exist."""
+        manager = TokenManager()
+        assert manager.initial_prompt == []
 
     def test_segment_info(self):
         """segment_info returns correct metadata."""
@@ -294,8 +317,9 @@ class TestEdgeCases:
     def test_zero_logprob(self):
         """Zero logprob is valid and preserved."""
         manager = TokenManager()
+        manager.add_prompt([0])
         manager.add_response([1], logprobs=[0.0])
-        assert manager.logprobs == [0.0]
+        assert manager.logprobs[1:] == [0.0]
 
     def test_negative_token_ids(self):
         """Negative token IDs are accepted (some tokenizers use them)."""
