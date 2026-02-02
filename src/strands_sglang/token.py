@@ -51,6 +51,17 @@ class TokenManager:
     - PROMPT: System messages, user input, tool results (loss_mask=False)
     - RESPONSE: Model outputs (loss_mask=True)
 
+    During an agent loop with the `SGLangModel` backend, segments are added in this order::
+
+        segments[0]: PROMPT   — initial prompt (system + tools + user message / conversation history)
+        segments[1]: RESPONSE — first model output (may include tool calls)
+        segments[2]: PROMPT   — tool results (if tool use occurred)
+        segments[3]: RESPONSE — next model output
+        ...                   — alternating PROMPT/RESPONSE until the loop ends
+
+    ``segments[0]`` always contains the full initial prompt from the first
+    generation call. Everything after it is the rollout.
+
     Example:
         >>> manager = TokenManager()
         >>> manager.add_prompt([1, 2, 3])
@@ -94,9 +105,14 @@ class TokenManager:
         Args:
             token_ids: Token IDs for this segment.
             logprobs: Optional log probabilities for each token.
+
+        Raises:
+            RuntimeError: If no prompt segment has been added yet.
         """
         if not token_ids:
             return
+        if not self._segments:
+            raise RuntimeError("First segment must be a prompt. Call add_prompt() before add_response().")
 
         tokens = [
             Token(
@@ -133,9 +149,18 @@ class TokenManager:
         return [token.logprob for token in self.tokens]
 
     @property
+    def initial_prompt(self) -> list[Token]:
+        """Get the initial prompt tokens (segments[0]).
+
+        This is the full input context from the first generation call:
+        system prompt + tool definitions + user message (or conversation history).
+        """
+        return self._segments[0] if self._segments else []
+
+    @property
     def segments(self) -> list[list[Token]]:
         """Get tokens organized by segment."""
-        return [list(seg) for seg in self._segments]
+        return self._segments
 
     @property
     def segment_info(self) -> list[tuple[bool, int]]:

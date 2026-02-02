@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`TokenManager.initial_prompt`**: Property to access the first segment (initial prompt tokens) directly, instead of indexing `segments[0]`.
+
+### Changed
+
+- **`TokenManager.add_response()` guard**: Raises `RuntimeError` if called before any `add_prompt()`, enforcing that the first segment is always a prompt.
+- **`TokenManager.segments`**: No longer returns defensive copies; returns internal segment lists directly.
+
 ## [0.1.1] - 2026-01-26
 
 ### Added
