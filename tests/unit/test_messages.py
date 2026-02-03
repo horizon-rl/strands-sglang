@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from strands_sglang import HermesToolCallParser, SGLangModel
+from strands_sglang import HermesToolCallParser, SGLangClient, SGLangModel
 
 
 @pytest.fixture
@@ -34,7 +34,8 @@ def mock_tokenizer():
 @pytest.fixture
 def model(mock_tokenizer):
     """Create an SGLangModel with mock tokenizer."""
-    return SGLangModel(tokenizer=mock_tokenizer)
+    client = SGLangClient(base_url="http://localhost:30000")
+    return SGLangModel(tokenizer=mock_tokenizer, client=client)
 
 
 class TestFormatRequestMessages:
@@ -334,7 +335,8 @@ class TestFormatRequestMessages:
             bot_token="<function>",
             eot_token="</function>",
         )
-        model = SGLangModel(tokenizer=mock_tokenizer, tool_call_parser=custom_parser)
+        client = SGLangClient(base_url="http://localhost:30000")
+        model = SGLangModel(tokenizer=mock_tokenizer, client=client, tool_call_parser=custom_parser)
 
         messages = [
             {
@@ -359,7 +361,8 @@ class TestFormatRequestMessages:
             bot_token="<function>",
             eot_token="</function>",
         )
-        model = SGLangModel(tokenizer=mock_tokenizer, tool_call_parser=custom_parser)
+        client = SGLangClient(base_url="http://localhost:30000")
+        model = SGLangModel(tokenizer=mock_tokenizer, client=client, tool_call_parser=custom_parser)
 
         messages = [
             {
