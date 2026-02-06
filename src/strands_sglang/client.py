@@ -14,9 +14,9 @@
 
 """SGLang HTTP client with connection pooling and retry logic.
 
-Aligned with Slime's http_utils.py for RL training stability:
+Aligned with slime's http_utils.py for RL training stability:
 - Aggressive retry (60 attempts by default)
-- Retries on all transient errors (like Slime)
+- Retries on all transient errors (like slime)
 - Infinite timeout by default for long generations
 - Non-streaming POST for better parallelism (no SSE overhead)
 """
@@ -37,7 +37,7 @@ DEFAULT_MAX_CONNECTIONS = 1000
 # Non-retryable HTTP status codes
 #
 # Reference: OpenAI Python SDK (_base_client.py) retries: 408, 409, 429, 5xx
-# Reference: Slime (http_utils.py) retries ALL errors for local SGLang servers
+# Reference: slime (http_utils.py) retries ALL errors for local SGLang servers
 #
 # Our hybrid approach for local SGLang during RL training:
 # - 401/403/404: Don't retry (auth/routing errors won't self-resolve)
@@ -52,7 +52,7 @@ class SGLangClient:
     """Async HTTP client for SGLang server with connection pooling and retry.
 
     Designed for RL training stability with aggressive retry on transient errors.
-    Aligned with Slime's http_utils.py approach.
+    Aligned with slime's http_utils.py approach.
 
     Uses non-streaming POST requests for better parallelism in high-concurrency
     training scenarios (no SSE overhead, connections released immediately).
@@ -62,10 +62,10 @@ class SGLangClient:
         ...     result = await client.generate(input_ids=[1, 2, 3])
         ...     print(result["text"])
 
-        >>> # For RL training with infinite timeout (like Slime):
+        >>> # For RL training with infinite timeout (like slime):
         >>> client = SGLangClient(base_url="http://localhost:30000", timeout=None)
 
-        >>> # From Slime training args:
+        >>> # From slime training args:
         >>> client = SGLangClient.from_slime_args(args)
     """
 
@@ -74,7 +74,7 @@ class SGLangClient:
         base_url: str,
         *,
         max_connections: int = DEFAULT_MAX_CONNECTIONS,
-        timeout: float | None = None,
+        timeout: float | None = 900.0,
         connect_timeout: float = 5.0,
         max_retries: int = 60,
         retry_delay: float = 1.0,
@@ -84,16 +84,16 @@ class SGLangClient:
         Args:
             base_url: SGLang server URL (e.g., "http://localhost:30000").
             max_connections: Maximum concurrent connections (default: 1000).
-            timeout: Request timeout in seconds, or None for infinite (default: None, like Slime).
+            timeout: Request timeout in seconds, or None for infinite (default: 900.0).
             connect_timeout: TCP connection timeout in seconds (default: 5s).
-            max_retries: Maximum retry attempts on transient errors (default: 60, like Slime).
+            max_retries: Maximum retry attempts on transient errors (default: 60, like slime).
             retry_delay: Delay between retries in seconds (default: 1.0).
         """
         self.base_url = base_url.rstrip("/")
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
-        # timeout=None means infinite wait (like Slime's httpx.Timeout(None))
+        # timeout=None means infinite wait (like slime's httpx.Timeout(None))
         http_timeout = httpx.Timeout(timeout, connect=connect_timeout) if timeout else httpx.Timeout(None)
 
         # FIX: Set max_keepalive_connections equal to max_connections to avoid connection churn
@@ -112,9 +112,9 @@ class SGLangClient:
 
     @classmethod
     def from_slime_args(cls, args: Any, **overrides: Any) -> SGLangClient:
-        """Create SGLangClient from Slime's training args.
+        """Create SGLangClient from slime's training args.
 
-        Matches Slime's [`init_http_client`](https://github.com/THUDM/slime/blob/main/slime/utils/http_utils.py) formula:
+        Matches slime's [`init_http_client`](https://github.com/THUDM/slime/blob/main/slime/utils/http_utils.py) formula:
 
             max_connections = concurrency * (num_gpus / gpus_per_engine)
 
@@ -123,7 +123,7 @@ class SGLangClient:
         This ensures enough connections to fully saturate all server instances.
 
         Args:
-            args: Slime's args namespace with required attributes:
+            args: slime's args namespace with required attributes:
                 - sglang_router_ip: SGLang router IP address
                 - sglang_router_port: SGLang router port
                 - sglang_server_concurrency: Concurrency per SGLang server
@@ -140,7 +140,7 @@ class SGLangClient:
         """
         return cls(
             base_url=f"http://{args.sglang_router_ip}:{args.sglang_router_port}",
-            # Matches Slime's init_http_client formula
+            # Matches slime's init_http_client formula
             max_connections=args.sglang_server_concurrency * args.rollout_num_gpus // args.rollout_num_gpus_per_engine,
             **overrides,
         )
@@ -160,7 +160,7 @@ class SGLangClient:
     def _is_retryable_error(self, e: Exception) -> bool:
         """Check if an error is retryable.
 
-        Aligned with Slime's philosophy: retry aggressively on most errors.
+        Aligned with slime's philosophy: retry aggressively on most errors.
         For local SGLang servers, most 400 errors are transient (weight reloading, memory pressure).
 
         Non-retryable:
