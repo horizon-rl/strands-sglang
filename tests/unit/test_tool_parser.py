@@ -277,11 +277,8 @@ class TestHermesToolCallParser:
     # --- Custom Tokens ---
 
     def test_custom_tokens(self):
-        """Use custom bot/eot tokens."""
-        parser = HermesToolCallParser(
-            bot_token="<function>",
-            eot_token="</function>",
-        )
+        """Use custom tool_call_tokens."""
+        parser = HermesToolCallParser(tool_call_tokens=("<function>", "</function>"))
         text = '<function>{"name": "custom", "arguments": {}}</function>'
         results = parser.parse(text)
 
@@ -290,10 +287,7 @@ class TestHermesToolCallParser:
 
     def test_custom_tokens_ignore_default(self):
         """Custom tokens ignore default format."""
-        parser = HermesToolCallParser(
-            bot_token="<function>",
-            eot_token="</function>",
-        )
+        parser = HermesToolCallParser(tool_call_tokens=("<function>", "</function>"))
         # Default format should not be parsed
         text = '<tool_call>{"name": "ignored", "arguments": {}}</tool_call>'
         results = parser.parse(text)
@@ -469,8 +463,8 @@ class TestHermesToolCallParser:
         assert results[0].name == "tool"
 
     def test_disable_think_block_exclusion(self):
-        """Setting think_start_token=None disables exclusion."""
-        parser = HermesToolCallParser(think_start_token=None)
+        """Setting think_tokens=None disables exclusion."""
+        parser = HermesToolCallParser(think_tokens=None)
         text = """
         <think>
         <tool_call>{"name": "inside_think", "arguments": {}}</tool_call>
@@ -486,10 +480,7 @@ class TestHermesToolCallParser:
 
     def test_custom_think_tokens(self):
         """Custom think tokens work correctly."""
-        parser = HermesToolCallParser(
-            think_start_token="<reasoning>",
-            think_end_token="</reasoning>",
-        )
+        parser = HermesToolCallParser(think_tokens=("<reasoning>", "</reasoning>"))
         text = """
         <reasoning>
         <tool_call>{"name": "draft", "arguments": {}}</tool_call>
@@ -503,10 +494,7 @@ class TestHermesToolCallParser:
 
     def test_custom_think_tokens_ignore_default(self):
         """Custom think tokens don't exclude default <think> blocks."""
-        parser = HermesToolCallParser(
-            think_start_token="<reasoning>",
-            think_end_token="</reasoning>",
-        )
+        parser = HermesToolCallParser(think_tokens=("<reasoning>", "</reasoning>"))
         text = """
         <think>
         <tool_call>{"name": "in_think", "arguments": {}}</tool_call>

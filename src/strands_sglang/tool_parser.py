@@ -120,14 +120,14 @@ class ToolCallParser(ABC):
 
 
 class HermesToolCallParser(ToolCallParser):
-    """Parser for Hermes/Qwen XML tool call format.
+    """Parser for Hermes/Qwen tool call format (JSON wrapped in delimiters).
 
     Format: <tool_call>{"name": "func", "arguments": {"arg": value}}</tool_call>
 
     Used by:
     - Qwen/Qwen2/Qwen3 models
     - NousResearch/Hermes models
-    - Models using similar XML-wrapped JSON tool call format
+    - Models using similar wrapped JSON tool call format
 
     Only handles JSONDecodeError; Strands validates arguments against tool schemas.
 
@@ -135,7 +135,7 @@ class HermesToolCallParser(ToolCallParser):
         Models with reasoning capabilities (Qwen3 with thinking, DeepSeek-R1, etc.)
         may output draft tool calls inside <think>...</think> blocks. These are
         excluded by default to avoid executing planning/reasoning tool calls.
-        Set think_start_token=None to disable this behavior.
+        Set think_tokens=None to disable this behavior.
 
     Chat Template Notes:
         Qwen3's chat template uses newline as separator between messages:
@@ -143,48 +143,38 @@ class HermesToolCallParser(ToolCallParser):
         The message_separator property returns "\\n" to match this format.
 
     Attributes:
-        bot_token: Opening tag for tool calls (default: "<tool_call>").
-        eot_token: Closing tag for tool calls (default: "</tool_call>").
-        think_start_token: Opening tag for think blocks (default: "<think>").
-        think_end_token: Closing tag for think blocks (default: "</think>").
+        tool_call_tokens: Start/end delimiters for tool calls.
+        think_tokens: Start/end delimiters for think blocks to exclude.
     """
 
-    DEFAULT_BOT_TOKEN = "<tool_call>"  # tool call start tag
-    DEFAULT_EOT_TOKEN = "</tool_call>"  # tool call end tag
-    DEFAULT_THINK_START_TOKEN = "<think>"  # think block start tag
-    DEFAULT_THINK_END_TOKEN = "</think>"  # think block end tag
-    _NAME_PATTERN = re.compile(r'"name"\s*:\s*"([^"]+)"')  # tool call name regex
+    DEFAULT_TOOL_CALL_TOKENS = ("<tool_call>", "</tool_call>")
+    DEFAULT_THINK_TOKENS = ("<think>", "</think>")
+    _NAME_PATTERN = re.compile(r'"name"\s*:\s*"([^"]+)"')
 
     def __init__(
         self,
-        bot_token: str = DEFAULT_BOT_TOKEN,
-        eot_token: str = DEFAULT_EOT_TOKEN,
-        think_start_token: str | None = DEFAULT_THINK_START_TOKEN,
-        think_end_token: str | None = DEFAULT_THINK_END_TOKEN,
+        tool_call_tokens: tuple[str, str] = DEFAULT_TOOL_CALL_TOKENS,
+        think_tokens: tuple[str, str] | None = DEFAULT_THINK_TOKENS,
     ) -> None:
         """Initialize the parser with optional custom tokens.
 
         Args:
-            bot_token: Custom opening tag (default: "<tool_call>").
-            eot_token: Custom closing tag (default: "</tool_call>").
-            think_start_token: Opening tag for think blocks to exclude (default: "<think>").
+            tool_call_tokens: (start, end) delimiters for tool calls.
+            think_tokens: (start, end) delimiters for think blocks to exclude.
                 Set to None to disable think block exclusion.
-            think_end_token: Closing tag for think blocks to exclude (default: "</think>").
         """
-        self.bot_token = bot_token
-        self.eot_token = eot_token
-        self.think_start_token = think_start_token
-        self.think_end_token = think_end_token
+        self.tool_call_tokens = tool_call_tokens
+        self.think_tokens = think_tokens
 
         self._pattern = re.compile(
-            rf"{re.escape(self.bot_token)}\s*(.*?)\s*{re.escape(self.eot_token)}",
+            rf"{re.escape(tool_call_tokens[0])}\s*(.*?)\s*{re.escape(tool_call_tokens[1])}",
             re.DOTALL,
         )
 
         # Pattern to remove think blocks (if configured)
-        if think_start_token and think_end_token:
+        if think_tokens:
             self._think_pattern: re.Pattern[str] | None = re.compile(
-                rf"{re.escape(think_start_token)}.*?{re.escape(think_end_token)}",
+                rf"{re.escape(think_tokens[0])}.*?{re.escape(think_tokens[1])}",
                 re.DOTALL,
             )
         else:
