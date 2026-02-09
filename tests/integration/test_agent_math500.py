@@ -28,7 +28,7 @@ from strands_tools import calculator
 
 from strands_sglang import SGLangModel
 from strands_sglang.client import SGLangClient
-from strands_sglang.tool_parsers import HermesToolCallParser
+from strands_sglang.tool_parsers import HermesToolParser
 
 SYSTEM_PROMPT = """You are a math tutor. Always use the calculator tool to solve problems.
 
@@ -157,7 +157,7 @@ def model(tokenizer, sglang_base_url, sglang_model_id):
     return SGLangModel(
         tokenizer=tokenizer,
         client=client,
-        tool_call_parser=HermesToolCallParser(),
+        tool_parser=HermesToolParser(),
         model_id=sglang_model_id,
         params={"max_new_tokens": 32768},  # High limit for thinking models
     )

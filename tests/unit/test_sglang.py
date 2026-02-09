@@ -20,7 +20,7 @@ import pytest
 
 from strands_sglang import SGLangModel
 from strands_sglang.client import SGLangClient
-from strands_sglang.tool_parsers import ToolCallParseResult
+from strands_sglang.tool_parsers import ToolParseResult
 
 
 @pytest.fixture
@@ -216,7 +216,7 @@ class TestYieldToolUseEvents:
     def test_single_tool_call(self, model):
         """Yield events for single tool call."""
         tool_calls = [
-            ToolCallParseResult(id="call_123", name="calculator", input={"expr": "2+2"})
+            ToolParseResult(id="call_123", name="calculator", input={"expr": "2+2"})
         ]
         events = list(model._yield_tool_use_events(tool_calls))
 
@@ -234,8 +234,8 @@ class TestYieldToolUseEvents:
     def test_multiple_tool_calls(self, model):
         """Yield events for multiple tool calls."""
         tool_calls = [
-            ToolCallParseResult(id="call_1", name="tool1", input={}),
-            ToolCallParseResult(id="call_2", name="tool2", input={}),
+            ToolParseResult(id="call_1", name="tool1", input={}),
+            ToolParseResult(id="call_2", name="tool2", input={}),
         ]
         events = list(model._yield_tool_use_events(tool_calls))
 
@@ -252,7 +252,7 @@ class TestYieldToolUseEvents:
     def test_error_tool_call(self, model):
         """Error tool call includes raw content."""
         tool_calls = [
-            ToolCallParseResult(id="call_err", name="broken", input={}, raw="invalid json")
+            ToolParseResult(id="call_err", name="broken", input={}, raw="invalid json")
         ]
         events = list(model._yield_tool_use_events(tool_calls))
 

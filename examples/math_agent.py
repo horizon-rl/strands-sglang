@@ -24,7 +24,7 @@ from transformers import AutoTokenizer
 
 from strands_sglang import SGLangModel
 from strands_sglang.client import SGLangClient
-from strands_sglang.tool_parser import HermesToolCallParser
+from strands_sglang.tool_parsers import HermesToolParser
 
 
 async def main():
@@ -44,7 +44,7 @@ async def main():
     model = SGLangModel(
         tokenizer=tokenizer,
         client=client,
-        tool_call_parser=HermesToolCallParser(),
+        tool_parser=HermesToolParser(),
         model_id=model_id,
         params={"max_new_tokens": 16384},  # Limit response length
     )

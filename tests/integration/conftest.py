@@ -29,7 +29,7 @@ from transformers import AutoTokenizer
 
 from strands_sglang import SGLangModel
 from strands_sglang.client import SGLangClient
-from strands_sglang.tool_parsers import HermesToolCallParser
+from strands_sglang.tool_parsers import HermesToolParser
 
 # Mark all tests in this directory as integration tests
 pytestmark = pytest.mark.integration
@@ -99,7 +99,7 @@ def model(tokenizer, sglang_base_url, sglang_model_id):
     return SGLangModel(
         tokenizer=tokenizer,
         client=client,
-        tool_call_parser=HermesToolCallParser(),
+        tool_parser=HermesToolParser(),
         model_id=sglang_model_id,
         params={"max_new_tokens": 32768},
     )

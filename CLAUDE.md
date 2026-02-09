@@ -29,7 +29,7 @@ pytest tests/unit/ -v
 pytest tests/unit/test_sglang.py -v
 
 # Single test
-pytest tests/unit/test_tool_parser.py::TestHermesToolCallParser::test_parse_single_tool_call -v
+pytest tests/unit/test_tool_parser.py::TestHermesToolParser::test_parse_single_tool_call -v
 
 # Unit tests with coverage
 pytest tests/unit/ -v --cov=src/strands_sglang --cov-report=html
@@ -49,7 +49,7 @@ The package lives in `src/strands_sglang/` with 5 core modules:
 
 **TokenManager** (`token.py`) - Segment-based token accumulation for TITO. Tokens organized into PROMPT segments (loss_mask=0) and RESPONSE segments (loss_mask=1) matching multi-turn conversation structure. Exposes `token_ids`, `loss_mask`, `logprobs`, and `segments` properties.
 
-**ToolCallParser** (`tool_parser.py`) - Abstract base with `HermesToolCallParser` implementation. Parses XML-wrapped JSON tool calls (`<tool_call>{"name": ..., "arguments": ...}</tool_call>`). Strict parsing: only catches JSONDecodeError, propagates failures as tool calls with `raw` content for model feedback. Excludes tool calls inside `<think>` blocks.
+**ToolParser** (`tool_parsers/`) - Abstract base with `HermesToolParser` and `QwenXMLToolParser` implementations. Parses tool calls from model output. Strict parsing: only catches JSONDecodeError, propagates failures as tool calls with `raw` content for model feedback. Excludes tool calls inside `<think>` blocks. New parsers self-register via `@register_tool_parser` decorator.
 
 **ToolIterationLimiter** (`tool_limiter.py`) - Strands hook enforcing max tool iterations per invocation. One iteration = model response with tool calls + execution + result returned. Raises `MaxToolIterationsReachedError`.
 

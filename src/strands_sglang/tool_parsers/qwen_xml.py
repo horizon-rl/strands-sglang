@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Hermes/Qwen tool call parser."""
+"""Qwen XML tool call parser."""
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 
@@ -25,27 +24,31 @@ from .base import UNKNOWN_TOOL_NAME, ToolParser, ToolParseResult, register_tool_
 logger = logging.getLogger(__name__)
 
 
-@register_tool_parser("hermes")
-class HermesToolParser(ToolParser):
-    """Parser for Hermes/Qwen tool call format (JSON wrapped in delimiters).
+@register_tool_parser("qwen_xml")
+class QwenXMLToolParser(ToolParser):
+    """Parser for Qwen3-Coder XML tool call format.
 
-    Format: <tool_call>{"name": "func", "arguments": {"arg": value}}</tool_call>
+    Format:
+        <tool_call>
+        <function=function_name>
+        <parameter=param1>
+        value1
+        </parameter>
+        <parameter=param2>
+        value2
+        </parameter>
+        </function>
+        </tool_call>
 
     Used by:
-    - Qwen/Qwen2/Qwen3 models
-    - NousResearch/Hermes models
-    - Models using similar wrapped JSON tool call format
+    - Qwen/Qwen3-Coder models
 
-    Only handles JSONDecodeError; Strands validates arguments against tool schemas.
-
-    Think Block Handling:
-        Models with reasoning capabilities (Qwen3 with thinking, DeepSeek-R1, etc.)
-        may output draft tool calls inside <think>...</think> blocks. These are
-        excluded by default to avoid executing planning/reasoning tool calls.
-        Set think_tokens=None to disable this behavior.
+    This format uses attribute-style XML tags where the function name and
+    parameter names are embedded in the tag itself (e.g., `<function=name>`
+    and `<parameter=name>`). Parameter values can span multiple lines.
 
     Chat Template Notes:
-        Qwen3's chat template uses newline as separator between messages:
+        Qwen Coder's chat template uses newline as separator between messages:
         `<|im_start|>role\\ncontent<|im_end|>\\n<|im_start|>...`
         The message_separator property returns "\\n" to match this format.
 
@@ -56,7 +59,12 @@ class HermesToolParser(ToolParser):
 
     DEFAULT_TOOL_CALL_TOKENS = ("<tool_call>", "</tool_call>")
     DEFAULT_THINK_TOKENS = ("<think>", "</think>")
-    _NAME_PATTERN = re.compile(r'"name"\s*:\s*"([^"]+)"')
+
+    # Pattern to extract function name from <function=name>...</function>
+    _FUNCTION_PATTERN = re.compile(r"<function=([^>]+)>(.*?)</function>", re.DOTALL)
+
+    # Pattern to extract parameters from <parameter=name>value</parameter>
+    _PARAMETER_PATTERN = re.compile(r"<parameter=([^>]+)>(.*?)</parameter>", re.DOTALL)
 
     def __init__(
         self,
@@ -91,11 +99,7 @@ class HermesToolParser(ToolParser):
     def message_separator(self) -> str:
         """Separator between messages in the chat template.
 
-        Different tokenizers use different separators between messages.
-        This is used during incremental tokenization to ensure the TITO
-        trajectory matches what `apply_chat_template` would produce.
-
-        Qwen models use newline `\\n` as separator between messages.
+        Qwen Coder models use newline `\\n` as separator between messages.
         """
         return "\n"
 
@@ -118,32 +122,32 @@ class HermesToolParser(ToolParser):
             raw_content = match.group(1).strip()
             tool_call_id = f"call_{i:04d}"  # Sequential IDs for sortability
 
-            # Only handle JSONDecodeError - let Strands validate the rest
-            try:
-                call_json = json.loads(raw_content)
-            except json.JSONDecodeError as e:
-                tool_calls.append(self._make_error_tool_call(raw_content, tool_call_id, e))
+            # Parse the function tag
+            func_match = self._FUNCTION_PATTERN.search(raw_content)
+            if not func_match:
+                tool_calls.append(self._make_error_tool_call(raw_content, tool_call_id, "missing <function=...> tag"))
                 continue
 
-            # Extract name and arguments - be lenient, let Strands validate
-            if isinstance(call_json, dict):
-                name = call_json.get("name")
-                arguments = call_json.get("arguments", {})
-            else:
-                name = None
-                arguments = {}
+            func_name = func_match.group(1).strip()
+            func_body = func_match.group(2)
 
-            # Need a string name to yield toolUse event
-            if not name or not isinstance(name, str):
-                tool_calls.append(self._make_error_tool_call(raw_content, tool_call_id, ValueError("missing name")))
+            if not func_name:
+                tool_calls.append(self._make_error_tool_call(raw_content, tool_call_id, "empty function name"))
                 continue
 
-            # Pass arguments as-is - Strands validates against tool schema
+            # Parse all parameters from the function body
+            arguments: dict[str, str] = {}
+            for param_match in self._PARAMETER_PATTERN.finditer(func_body):
+                param_name = param_match.group(1).strip()
+                param_value = param_match.group(2).strip()
+                if param_name:
+                    arguments[param_name] = param_value
+
             tool_calls.append(
                 ToolParseResult(
                     id=tool_call_id,
-                    name=name,
-                    input=arguments if isinstance(arguments, dict) else {},
+                    name=func_name,
+                    input=arguments,
                 )
             )
 
@@ -153,12 +157,12 @@ class HermesToolParser(ToolParser):
         self,
         raw_content: str,
         tool_call_id: str,
-        error: Exception,
+        error: str,
     ) -> ToolParseResult:
         """Create an error tool call for parse failures."""
-        # Try to extract tool name even from malformed JSON
-        name_match = self._NAME_PATTERN.search(raw_content)
-        name = name_match.group(1) if name_match else UNKNOWN_TOOL_NAME
+        # Try to extract function name from malformed content
+        func_match = self._FUNCTION_PATTERN.search(raw_content)
+        name = func_match.group(1).strip() if func_match else UNKNOWN_TOOL_NAME
 
         logger.warning(f"Tool call parse error: {error}")
 

@@ -54,7 +54,7 @@ from typing_extensions import Unpack, override
 
 from .client import SGLangClient
 from .token import TokenManager
-from .tool_parsers import HermesToolCallParser, ToolCallParser, ToolCallParseResult
+from .tool_parsers import HermesToolParser, ToolParser, ToolParseResult
 
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizerBase
@@ -72,7 +72,7 @@ class SGLangModel(Model):
         tokenizer: HuggingFace tokenizer for encoding/decoding.
         client: SGLangClient for HTTP communication with the SGLang server.
         token_manager: Tracks tokens, logprobs, and masks for on-policy training.
-        tool_call_parser: Parser for extracting tool calls from model output.
+        tool_parser: Parser for extracting tool calls from model output.
 
     Example:
         >>> from transformers import AutoTokenizer
@@ -99,7 +99,7 @@ class SGLangModel(Model):
         *,
         tokenizer: PreTrainedTokenizerBase,
         client: SGLangClient,
-        tool_call_parser: ToolCallParser | None = None,
+        tool_parser: ToolParser | None = None,
         **model_config: Unpack[SGLangConfig],
     ) -> None:
         """Initialize SGLang model provider.
@@ -107,14 +107,14 @@ class SGLangModel(Model):
         Args:
             tokenizer: HuggingFace tokenizer for chat template and tokenization.
             client: SGLangClient for HTTP communication with the SGLang server.
-            tool_call_parser: Parser for tool calls (default: HermesToolCallParser).
+            tool_parser: Parser for tool calls (default: HermesToolParser).
             **model_config: See SGLangConfig for available options.
         """
 
         # Essential attributes
         self.tokenizer = tokenizer
         self.client = client
-        self.tool_call_parser = tool_call_parser or HermesToolCallParser()
+        self.tool_parser = tool_parser or HermesToolParser()
 
         # Config
         self.config = dict(model_config)
@@ -274,8 +274,8 @@ class SGLangModel(Model):
             # Prepend message separator to align with chat template.
             # The model generates up to <|im_end|>, but the chat template adds
             # a separator (e.g., "\n") before the next <|im_start|>.
-            if self.tool_call_parser:
-                formatted = self.tool_call_parser.message_separator + formatted
+            if self.tool_parser:
+                formatted = self.tool_parser.message_separator + formatted
 
             return self.tokenizer.encode(formatted, add_special_tokens=False)
 
@@ -300,7 +300,7 @@ class SGLangModel(Model):
 
     def _yield_tool_use_events(
         self,
-        tool_calls: list[ToolCallParseResult],
+        tool_calls: list[ToolParseResult],
     ) -> Iterator[StreamEvent]:
         """Yield toolUse stream events for parsed tool calls.
 
@@ -424,7 +424,7 @@ class SGLangModel(Model):
         yield {"contentBlockStop": {}}
 
         # Parse tool calls and yield events
-        parsed_tool_calls = self.tool_call_parser.parse(text)
+        parsed_tool_calls = self.tool_parser.parse(text)
         for event in self._yield_tool_use_events(parsed_tool_calls):
             yield event
 

@@ -19,14 +19,19 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 # Fallback tool name when we can't identify which tool the model tried to call
 UNKNOWN_TOOL_NAME = "unknown_tool"
 
+# Parser registry - populated by @register_tool_parser decorator
+TOOL_PARSER_REGISTRY: dict[str, type[ToolParser]] = {}
+
+T = TypeVar("T", bound="ToolParser")
+
 
 @dataclass(frozen=True, slots=True)
-class ToolCallParseResult:
+class ToolParseResult:
     """A parsed tool call request.
 
     For successful parses: name and input are populated, raw is None.
@@ -55,7 +60,7 @@ class ToolCallParseResult:
         return json.dumps(self.input)
 
 
-class ToolCallParser(ABC):
+class ToolParser(ABC):
     """Base class for tool call parsers.
 
     Subclasses implement `parse` to extract tool calls from model output.
@@ -82,7 +87,7 @@ class ToolCallParser(ABC):
         return ""
 
     @abstractmethod
-    def parse(self, text: str) -> list[ToolCallParseResult]:
+    def parse(self, text: str) -> list[ToolParseResult]:
         """Parse tool calls from model output text.
 
         Args:
@@ -104,3 +109,48 @@ class ToolCallParser(ABC):
         """
         results = self.parse(text)
         return [{"id": tc.id, "name": tc.name, "input": tc.input} for tc in results if not tc.is_error]
+
+
+def register_tool_parser(name: str) -> Callable[[type[T]], type[T]]:
+    """Decorator to register a tool parser class.
+
+    Args:
+        name: Registry name for the parser.
+
+    Returns:
+        Decorator that registers the class and returns it unchanged.
+
+    Example:
+        >>> @register_tool_parser("my_parser")
+        ... class MyParser(ToolParser):
+        ...     def parse(self, text): ...
+    """
+
+    def decorator(cls: type[T]) -> type[T]:
+        TOOL_PARSER_REGISTRY[name] = cls
+        return cls
+
+    return decorator
+
+
+def get_tool_parser(name: str, **kwargs: Any) -> ToolParser:
+    """Get a tool parser by name.
+
+    Args:
+        name: Parser name (e.g., "hermes", "qwen_xml").
+        **kwargs: Arguments passed to the parser constructor.
+
+    Returns:
+        Instantiated parser.
+
+    Raises:
+        KeyError: If parser name is not registered.
+
+    Example:
+        >>> parser = get_tool_parser("hermes")
+        >>> parser = get_tool_parser("hermes", think_tokens=None)
+    """
+    if name not in TOOL_PARSER_REGISTRY:
+        available = ", ".join(sorted(TOOL_PARSER_REGISTRY.keys()))
+        raise KeyError(f"Unknown tool parser: {name!r}. Available: {available}")
+    return TOOL_PARSER_REGISTRY[name](**kwargs)

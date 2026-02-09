@@ -21,49 +21,27 @@ Design for RL Training:
 - Only handle `JSONDecodeError` (can't extract anything from malformed JSON)
 - Let Strands validate arguments against tool schemas
 - Parse errors become tool calls with error info for model feedback
+
+Adding a new parser:
+    1. Create a new file (e.g., `my_parser.py`)
+    2. Decorate the class with `@register_tool_parser("my_parser")`
+    3. Import the module here to trigger registration
 """
 
-from typing import Any
+from .base import TOOL_PARSER_REGISTRY, UNKNOWN_TOOL_NAME, ToolParser, ToolParseResult, get_tool_parser
 
-from .base import UNKNOWN_TOOL_NAME, ToolCallParser, ToolCallParseResult
-from .hermes import HermesToolCallParser
-
-# Parser registry
-TOOL_PARSER_REGISTRY: dict[str, type[ToolCallParser]] = {
-    "hermes": HermesToolCallParser,
-}
-
-
-def get_tool_parser(name: str, **kwargs: Any) -> ToolCallParser:
-    """Get a tool parser by name.
-
-    Args:
-        name: Parser name (e.g., "hermes").
-        **kwargs: Arguments passed to the parser constructor.
-
-    Returns:
-        Instantiated parser.
-
-    Raises:
-        KeyError: If parser name is not registered.
-
-    Example:
-        >>> parser = get_tool_parser("hermes")
-        >>> parser = get_tool_parser("hermes", think_tokens=None)
-    """
-    if name not in TOOL_PARSER_REGISTRY:
-        available = ", ".join(sorted(TOOL_PARSER_REGISTRY.keys()))
-        raise KeyError(f"Unknown tool parser: {name!r}. Available: {available}")
-    return TOOL_PARSER_REGISTRY[name](**kwargs)
-
+# Import parsers to trigger registration via @register_tool_parser decorator
+from .hermes import HermesToolParser
+from .qwen_xml import QwenXMLToolParser
 
 __all__ = [
     # Base
-    "ToolCallParseResult",
-    "ToolCallParser",
+    "ToolParseResult",
+    "ToolParser",
     "UNKNOWN_TOOL_NAME",
     # Parsers
-    "HermesToolCallParser",
+    "HermesToolParser",
+    "QwenXMLToolParser",
     # Registry
     "TOOL_PARSER_REGISTRY",
     "get_tool_parser",

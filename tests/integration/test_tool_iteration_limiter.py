@@ -31,7 +31,7 @@ from strands_tools import calculator
 
 from strands_sglang import MaxToolIterationsReachedError, SGLangModel, ToolIterationLimiter
 from strands_sglang.client import SGLangClient
-from strands_sglang.tool_parsers import HermesToolCallParser
+from strands_sglang.tool_parsers import HermesToolParser
 
 
 def assert_max_iterations_reached(exc_info, expected_count: int | None = None):
@@ -84,7 +84,7 @@ def fresh_model(tokenizer, sglang_base_url, sglang_model_id):
     return SGLangModel(
         tokenizer=tokenizer,
         client=client,
-        tool_call_parser=HermesToolCallParser(),
+        tool_parser=HermesToolParser(),
         model_id=sglang_model_id,
         params={"max_new_tokens": 32768},
     )

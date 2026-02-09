@@ -27,7 +27,7 @@ from transformers import AutoTokenizer
 
 from strands_sglang import SGLangModel
 from strands_sglang.client import SGLangClient
-from strands_sglang.tool_parser import HermesToolCallParser
+from strands_sglang.tool_parsers import HermesToolParser
 
 
 def find_drift_index(original: list[int], re_encoded: list[int]) -> int | None:
@@ -53,7 +53,7 @@ async def main():
     model = SGLangModel(
         tokenizer=tokenizer,
         client=client,
-        tool_call_parser=HermesToolCallParser(),
+        tool_parser=HermesToolParser(),
         model_id=model_id,
         params={"max_new_tokens": 32768},
     )
