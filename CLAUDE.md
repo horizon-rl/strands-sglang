@@ -75,8 +75,8 @@ If using a remote GPU server, SSH-tunnel port 30000 instead of copying code:
 # 1. Launch SGLang on the remote server (docker or native)
 # 2. Tunnel the port locally
 ssh -L 30000:localhost:30000 -N -f <remote-host>
-# 3. Run tests locally as usual
-pytest tests/integration/ -v --sglang-base-url=http://localhost:30000 --sglang-model-id=<model-id>
+# 3. Run tests locally (model ID auto-detected from server)
+pytest tests/integration/ -v --sglang-base-url=http://localhost:30000
 ```
 
 Test with both an instruct model (e.g., `Qwen3-4B-Instruct-2507`) and a thinking model (e.g., `Qwen3-8B`) for full coverage. Thinking models will skip `MessageToTokenDrift` tests (expected).

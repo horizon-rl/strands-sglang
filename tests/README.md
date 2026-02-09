@@ -54,18 +54,17 @@ Integration tests can be configured via **command-line options** (recommended) o
 # View available options
 pytest --help | grep sglang
 
-# Configure via CLI
-pytest tests/integration/ \
-    --sglang-base-url=http://localhost:30000 \
-    --sglang-model-id=Qwen/Qwen3-4B-Instruct-2507
+# Configure via CLI (model ID auto-detected from server)
+pytest tests/integration/ --sglang-base-url=http://localhost:30000
 ```
 
 ### Environment Variables
 
-| Variable          | Default                       | Description       |
-| ----------------- | ----------------------------- | ----------------- |
-| `SGLANG_BASE_URL` | `http://localhost:30000`      | SGLang server URL |
-| `SGLANG_MODEL_ID` | `Qwen/Qwen3-4B-Instruct-2507` | Model ID          |
+| Variable          | Default                  | Description       |
+| ----------------- | ------------------------ | ----------------- |
+| `SGLANG_BASE_URL` | `http://localhost:30000` | SGLang server URL |
+
+Model ID and tokenizer path are automatically detected from the server's `/get_model_info` endpoint.
 
 ```bash
 SGLANG_BASE_URL=http://my-server:my-port pytest tests/integration/

@@ -17,11 +17,13 @@
 All tests in this directory are automatically marked as integration tests
 and require a running SGLang server.
 
-Configuration (priority: CLI > env var > default):
-    pytest --sglang-base-url=http://localhost:30000 --sglang-model-id=Qwen/Qwen3-4B-Instruct-2507
-    SGLANG_BASE_URL=http://... SGLANG_MODEL_ID=... pytest tests/integration/
+Usage:
+    pytest tests/integration/ --sglang-base-url=http://localhost:30000
+
+The model ID is auto-detected from the server's /get_model_info endpoint.
 """
 
+import httpx
 import pytest
 from transformers import AutoTokenizer
 
@@ -33,22 +35,61 @@ from strands_sglang.tool_parsers import HermesToolCallParser
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture(scope="session")
-def sglang_base_url(request):
-    """Get SGLang server URL from pytest config."""
-    return request.config.getoption("--sglang-base-url")
+def _get_server_info(base_url: str, timeout: float = 5.0) -> dict:
+    """Check server health and get model info.
+
+    Returns:
+        Server info dict with 'model_path' and 'tokenizer_path'.
+
+    Raises:
+        pytest.exit: If server is not reachable or unhealthy.
+    """
+    # Health check
+    try:
+        response = httpx.get(f"{base_url}/health", timeout=timeout)
+        if response.status_code != 200:
+            pytest.exit(f"SGLang server unhealthy: status {response.status_code}", returncode=1)
+    except httpx.ConnectError:
+        pytest.exit(f"Cannot connect to {base_url} - is the server running?", returncode=1)
+    except httpx.TimeoutException:
+        pytest.exit(f"Connection to {base_url} timed out", returncode=1)
+    except Exception as e:
+        pytest.exit(f"Health check failed: {e}", returncode=1)
+
+    # Get model info
+    try:
+        response = httpx.get(f"{base_url}/get_model_info", timeout=timeout)
+        return response.json()
+    except Exception as e:
+        pytest.exit(f"Failed to get model info: {e}", returncode=1)
 
 
 @pytest.fixture(scope="session")
-def sglang_model_id(request):
-    """Get model ID from pytest config."""
-    return request.config.getoption("--sglang-model-id")
+def sglang_server_info(request):
+    """Get server info (includes health check and model detection)."""
+    base_url = request.config.getoption("--sglang-base-url")
+    info = _get_server_info(base_url)
+    info["base_url"] = base_url
+    return info
+
+
+@pytest.fixture(scope="session")
+def sglang_base_url(sglang_server_info):
+    """Get SGLang server URL."""
+    return sglang_server_info["base_url"]
+
+
+@pytest.fixture(scope="session")
+def sglang_model_id(sglang_server_info):
+    """Get model ID (auto-detected from server)."""
+    return sglang_server_info["model_path"]
 
 
 @pytest.fixture(scope="module")
-def tokenizer(sglang_model_id):
+def tokenizer(sglang_server_info):
     """Load tokenizer for the configured model."""
-    return AutoTokenizer.from_pretrained(sglang_model_id)
+    tokenizer_path = sglang_server_info.get("tokenizer_path") or sglang_server_info["model_path"]
+    return AutoTokenizer.from_pretrained(tokenizer_path)
 
 
 @pytest.fixture

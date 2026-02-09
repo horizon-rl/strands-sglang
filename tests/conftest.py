@@ -25,10 +25,11 @@ Running Tests:
 
 Configuration:
     pytest tests/integration/ --sglang-base-url=http://localhost:30000
-    pytest tests/integration/ --sglang-model-id=Qwen/Qwen3-4B-Instruct-2507
 
-    Or via environment variables:
+    Or via environment variable:
     SGLANG_BASE_URL=http://localhost:30000 pytest tests/integration/
+
+Model ID and tokenizer path are auto-detected from the server.
 """
 
 import os
@@ -41,12 +42,6 @@ def pytest_addoption(parser):
         action="store",
         default=os.environ.get("SGLANG_BASE_URL", "http://localhost:30000"),
         help="SGLang server URL (default: http://localhost:30000 or SGLANG_BASE_URL env var)",
-    )
-    parser.addoption(
-        "--sglang-model-id",
-        action="store",
-        default=os.environ.get("SGLANG_MODEL_ID", "Qwen/Qwen3-4B-Instruct-2507"),
-        help="Model ID (default: Qwen/Qwen3-4B-Instruct-2507 or SGLANG_MODEL_ID env var)",
     )
 
 
