@@ -31,6 +31,7 @@ Adding a new parser:
 from .base import TOOL_PARSER_REGISTRY, UNKNOWN_TOOL_NAME, ToolParser, ToolParseResult, get_tool_parser
 
 # Import parsers to trigger registration via @register_tool_parser decorator
+from .glm import GLMToolCallParser
 from .hermes import HermesToolParser
 from .qwen_xml import QwenXMLToolParser
 
@@ -40,6 +41,7 @@ __all__ = [
     "ToolParser",
     "UNKNOWN_TOOL_NAME",
     # Parsers
+    "GLMToolCallParser",
     "HermesToolParser",
     "QwenXMLToolParser",
     # Registry
