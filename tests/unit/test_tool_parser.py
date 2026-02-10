@@ -18,7 +18,7 @@ import pytest
 
 from strands_sglang.tool_parsers import (
     UNKNOWN_TOOL_NAME,
-    GLMToolCallParser,
+    GLMToolParser,
     HermesToolParser,
     QwenXMLToolParser,
     ToolParseResult,
@@ -903,7 +903,7 @@ class TestGLMToolCallParser:
     @pytest.fixture
     def parser(self):
         """Create a default parser."""
-        return GLMToolCallParser()
+        return GLMToolParser()
 
     # --- Basic Parsing ---
 
@@ -1081,7 +1081,7 @@ if __name__ == "__main__":
 
     def test_custom_tokens(self):
         """Use custom tool_call_tokens."""
-        parser = GLMToolCallParser(tool_call_tokens=("<call>", "</call>"))
+        parser = GLMToolParser(tool_call_tokens=("<call>", "</call>"))
         text = """<call>custom
 <arg_key>x</arg_key>
 <arg_value>1</arg_value>
@@ -1094,7 +1094,7 @@ if __name__ == "__main__":
 
     def test_custom_tokens_ignore_default(self):
         """Custom tokens ignore default format."""
-        parser = GLMToolCallParser(tool_call_tokens=("<call>", "</call>"))
+        parser = GLMToolParser(tool_call_tokens=("<call>", "</call>"))
         text = """<tool_call>ignored
 <arg_key>x</arg_key>
 <arg_value>1</arg_value>
@@ -1169,7 +1169,7 @@ No, let me reconsider...
 
     def test_disable_think_block_exclusion(self):
         """Setting think_tokens=None disables exclusion."""
-        parser = GLMToolCallParser(think_tokens=None)
+        parser = GLMToolParser(think_tokens=None)
         text = """
 <think>
 <tool_call>inside_think
@@ -1329,11 +1329,11 @@ class TestToolParserRegistry:
         from strands_sglang.tool_parsers import get_tool_parser
 
         parser = get_tool_parser("glm")
-        assert isinstance(parser, GLMToolCallParser)
+        assert isinstance(parser, GLMToolParser)
 
     def test_registry_contains_glm(self):
         """Registry contains glm parser."""
         from strands_sglang.tool_parsers import TOOL_PARSER_REGISTRY
 
         assert "glm" in TOOL_PARSER_REGISTRY
-        assert TOOL_PARSER_REGISTRY["glm"] is GLMToolCallParser
+        assert TOOL_PARSER_REGISTRY["glm"] is GLMToolParser

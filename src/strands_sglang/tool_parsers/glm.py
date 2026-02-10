@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 @register_tool_parser("glm")
-class GLMToolCallParser(ToolParser):
+class GLMToolParser(ToolParser):
     """Parser for GLM XML key-value tool call format.
 
     Format:
