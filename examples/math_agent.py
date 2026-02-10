@@ -32,15 +32,10 @@ async def main():
     # 1. Setup
     # -------------------------------------------------------------------------
 
-    # Load tokenizer (must match the model running on SGLang server)
-    model_id = os.environ.get("SGLANG_MODEL_ID", "Qwen/Qwen3-4B-Thinking-2507")
-    base_url = os.environ.get("SGLANG_BASE_URL", "http://localhost:30000")
-
-    print(f"Loading tokenizer: {model_id}")
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-
-    # Create SGLangModel with TITO support
-    client = SGLangClient(base_url=base_url)
+    # Create SGLangModel with token-level trajectory tracking support
+    client = SGLangClient(base_url=os.environ.get("SGLANG_BASE_URL", "http://localhost:30000"))
+    model_info = await client.get_model_info()
+    tokenizer = AutoTokenizer.from_pretrained(model_info["model_path"])
     model = SGLangModel(
         client=client,
         tokenizer=tokenizer,
