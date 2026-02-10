@@ -59,9 +59,9 @@ from strands_tools import calculator
 from strands_sglang import SGLangClient, SGLangModel
 
 async def main():
-    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Instruct-2507")
     client = SGLangClient(base_url="http://localhost:30000")
-    model = SGLangModel(tokenizer=tokenizer, client=client)
+    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Instruct-2507")
+    model = SGLangModel(client=client, tokenizer=tokenizer)
     agent = Agent(model=model, tools=[calculator])
 
     result = await agent.invoke_async("What is 25 * 17?")
