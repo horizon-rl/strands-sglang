@@ -269,22 +269,27 @@ class SGLangClient:
         """Check if SGLang server is healthy.
 
         Returns:
-            True if server responds to `/health` endpoint, False otherwise.
+            True if server responds OK to `/health` endpoint, False otherwise.
         """
         try:
             response = await self._client.get("/health")
-            return response.status_code == 200
+            response.raise_for_status()
+            return True
         except httpx.HTTPError:
             return False
 
-    async def get_model_info(self) -> dict[str, Any]:
+    async def get_model_info(self) -> dict[str, Any] | None:
         """Get model information from the SGLang server.
 
         Returns:
-            Dict containing model info from `/get_model_info` endpoint. Important fields include:
+            Dict containing model info from `/get_model_info` endpoint, or None on error.
+            Important fields include:
             - model_path: HuggingFace model ID or local path
             - tokenizer_path: Tokenizer path (may differ from model_path)
         """
-        response = await self._client.get("/get_model_info")
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = await self._client.get("/get_model_info")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError:
+            return None
