@@ -296,33 +296,6 @@ class TestHermesToolParser:
 
         assert len(results) == 0
 
-    # --- Callable Interface ---
-
-    def test_callable_returns_successful_only(self, parser):
-        """__call__ returns only successful parses as dicts."""
-        text = """
-        <tool_call>{"name": "good", "arguments": {"x": 1}}</tool_call>
-        <tool_call>{malformed json}</tool_call>
-        <tool_call>{"name": "also_good", "arguments": {}}</tool_call>
-        """
-        results = parser(text)  # Using __call__
-
-        assert len(results) == 2
-        assert results[0]["name"] == "good"
-        assert results[0]["input"] == {"x": 1}
-        assert results[1]["name"] == "also_good"
-
-    def test_callable_returns_dict_format(self, parser):
-        """__call__ returns dicts with id, name, input keys."""
-        text = '<tool_call>{"name": "tool", "arguments": {"a": 1}}</tool_call>'
-        results = parser(text)
-
-        assert len(results) == 1
-        assert set(results[0].keys()) == {"id", "name", "input"}
-        assert results[0]["name"] == "tool"
-        assert results[0]["input"] == {"a": 1}
-        assert results[0]["id"].startswith("call_")
-
     # --- Mixed Success and Error ---
 
     def test_mixed_success_and_errors(self, parser):
@@ -715,47 +688,6 @@ if __name__ == "__main__":
 
         assert len(results) == 0
 
-    # --- Callable Interface ---
-
-    def test_callable_returns_successful_only(self, parser):
-        """__call__ returns only successful parses as dicts."""
-        text = """
-<tool_call>
-<function=good>
-<parameter=x>1</parameter>
-</function>
-</tool_call>
-<tool_call>
-no function tag here
-</tool_call>
-<tool_call>
-<function=also_good>
-<parameter=y>2</parameter>
-</function>
-</tool_call>
-"""
-        results = parser(text)  # Using __call__
-
-        assert len(results) == 2
-        assert results[0]["name"] == "good"
-        assert results[0]["input"] == {"x": "1"}
-        assert results[1]["name"] == "also_good"
-
-    def test_callable_returns_dict_format(self, parser):
-        """__call__ returns dicts with id, name, input keys."""
-        text = """<tool_call>
-<function=tool>
-<parameter=a>1</parameter>
-</function>
-</tool_call>"""
-        results = parser(text)
-
-        assert len(results) == 1
-        assert set(results[0].keys()) == {"id", "name", "input"}
-        assert results[0]["name"] == "tool"
-        assert results[0]["input"] == {"a": "1"}
-        assert results[0]["id"].startswith("call_")
-
     # --- Think Block Exclusion ---
 
     def test_exclude_tool_calls_inside_think_block(self, parser):
@@ -897,8 +829,8 @@ True
         assert results[0].input["waitForCompletion"] == "True"
 
 
-class TestGLMToolCallParser:
-    """Tests for GLMToolCallParser (GLM-4 and ChatGLM format)."""
+class TestGLMToolParser:
+    """Tests for GLMToolParser (GLM-4 and ChatGLM format)."""
 
     @pytest.fixture
     def parser(self):
@@ -1102,46 +1034,6 @@ if __name__ == "__main__":
         results = parser.parse(text)
 
         assert len(results) == 0
-
-    # --- Callable Interface ---
-
-    def test_callable_returns_successful_only(self, parser):
-        """__call__ returns only successful parses as dicts."""
-        text = """
-<tool_call>good
-<arg_key>x</arg_key>
-<arg_value>1</arg_value>
-</tool_call>
-<tool_call>
-<arg_key>x</arg_key>
-<arg_value>1</arg_value>
-</tool_call>
-<tool_call>also_good
-<arg_key>y</arg_key>
-<arg_value>2</arg_value>
-</tool_call>
-"""
-        results = parser(text)  # Using __call__
-
-        assert len(results) == 2
-        assert results[0]["name"] == "good"
-        assert results[0]["input"] == {"x": 1}  # JSON-decoded as integer
-        assert results[1]["name"] == "also_good"
-        assert results[1]["input"] == {"y": 2}  # JSON-decoded as integer
-
-    def test_callable_returns_dict_format(self, parser):
-        """__call__ returns dicts with id, name, input keys."""
-        text = """<tool_call>tool
-<arg_key>a</arg_key>
-<arg_value>1</arg_value>
-</tool_call>"""
-        results = parser(text)
-
-        assert len(results) == 1
-        assert set(results[0].keys()) == {"id", "name", "input"}
-        assert results[0]["name"] == "tool"
-        assert results[0]["input"] == {"a": 1}  # JSON-decoded as integer
-        assert results[0]["id"].startswith("call_")
 
     # --- Think Block Exclusion ---
 

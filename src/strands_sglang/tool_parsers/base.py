@@ -98,18 +98,6 @@ class ToolParser(ABC):
         """
         ...
 
-    def __call__(self, text: str) -> list[dict[str, Any]]:
-        """Parse tool calls (callable interface for backwards compatibility).
-
-        Args:
-            text: Model output text.
-
-        Returns:
-            List of successful tool calls as dicts.
-        """
-        results = self.parse(text)
-        return [{"id": tc.id, "name": tc.name, "input": tc.input} for tc in results if not tc.is_error]
-
 
 def register_tool_parser(name: str) -> Callable[[type[T]], type[T]]:
     """Decorator to register a tool parser class.
