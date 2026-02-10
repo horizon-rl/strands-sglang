@@ -65,20 +65,11 @@ logger = logging.getLogger(__name__)
 class SGLangModel(Model):
     """SGLang native `/generate` API provider with token-in/token-out support.
 
-    Uses a HuggingFace tokenizer for chat template formatting and SGLang's
-    `/generate` endpoint for generation. Tracks token trajectories via `TokenManager`.
-
-    Attributes:
-        tokenizer: HuggingFace tokenizer for encoding/decoding.
-        client: SGLangClient for HTTP communication with the SGLang server.
-        token_manager: Tracks tokens, logprobs, and masks for on-policy training.
-        tool_parser: Parser for extracting tool calls from model output.
-
     Example:
         >>> from transformers import AutoTokenizer
         >>> from strands_sglang import SGLangClient, SGLangModel
         >>> client = SGLangClient(base_url="http://localhost:30000")
-        >>> tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B", trust_remote_code=True)
+        >>> tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B")
         >>> model = SGLangModel(client=client, tokenizer=tokenizer)
         >>> # After generation:
         >>> model.token_manager.token_ids    # Full token trajectory
@@ -104,16 +95,14 @@ class SGLangModel(Model):
         """Initialize SGLang model provider.
 
         Args:
-            client: SGLangClient for HTTP communication with the SGLang server.
+            client: `SGLangClient` for HTTP communication with the SGLang server.
             tokenizer: HuggingFace tokenizer for chat template and tokenization.
-            tool_parser: Parser for tool calls (default: HermesToolParser).
-            **config: See SGLangConfig for available options.
+            tool_parser: `ToolParser` for tool calls (default: `HermesToolParser`).
+            **config: Additional SGLang generation configuration.
         """
         self.client = client
         self.tokenizer = tokenizer
         self.tool_parser = tool_parser or HermesToolParser()
-
-        # Config
         self.config = dict(config)
 
         # State tracking (this makes SGLangModel stateful)
@@ -337,7 +326,7 @@ class SGLangModel(Model):
         system_prompt_content: list[SystemContentBlock] | None = None,
         **kwargs: Any,
     ) -> AsyncIterable[StreamEvent]:
-        """Model call with `SGLangModel` using the `/generate` endpoint.
+        """Chat completion with SGLangModel using the `/generate` endpoint.
 
         The `stream` method follows Strands' protocol but actually disabled here for training-only usage.
         This means users won't see streaming behavior such as print callbacks.
