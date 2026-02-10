@@ -28,7 +28,7 @@ Adding a new parser:
     3. Import the module here to trigger registration
 """
 
-from .base import TOOL_PARSER_REGISTRY, UNKNOWN_TOOL_NAME, ToolParser, ToolParseResult, get_tool_parser
+from .base import TOOL_PARSER_REGISTRY, ToolParser, ToolParseResult, get_tool_parser
 
 # Import parsers to trigger registration via @register_tool_parser decorator
 from .glm import GLMToolParser
@@ -39,7 +39,6 @@ __all__ = [
     # Base
     "ToolParseResult",
     "ToolParser",
-    "UNKNOWN_TOOL_NAME",
     # Parsers
     "GLMToolParser",
     "HermesToolParser",

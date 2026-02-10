@@ -22,7 +22,7 @@ import re
 
 from typing_extensions import override
 
-from .base import UNKNOWN_TOOL_NAME, ToolParser, ToolParseResult, register_tool_parser
+from .base import ToolParser, ToolParseResult, register_tool_parser
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,10 @@ class HermesToolParser(ToolParser):
             try:
                 call_json = json.loads(raw_content)
             except json.JSONDecodeError as e:
-                tool_calls.append(self._make_error_tool_call(raw_content, tool_call_id, e))
+                name_match = self._NAME_PATTERN.search(raw_content)
+                name = name_match.group(1) if name_match else ToolParseResult.UNKNOWN_NAME
+                logger.warning(f"Tool parse error: {e}")
+                tool_calls.append(ToolParseResult.from_parse_error(id=tool_call_id, raw=raw_content, name=name))
                 continue
 
             # Extract name and arguments - be lenient, let Strands validate
@@ -139,7 +142,10 @@ class HermesToolParser(ToolParser):
 
             # Need a string name to yield toolUse event
             if not name or not isinstance(name, str):
-                tool_calls.append(self._make_error_tool_call(raw_content, tool_call_id, ValueError("missing name")))
+                name_match = self._NAME_PATTERN.search(raw_content)
+                extracted = name_match.group(1) if name_match else ToolParseResult.UNKNOWN_NAME
+                logger.warning("Tool parse error: missing name")
+                tool_calls.append(ToolParseResult.from_parse_error(id=tool_call_id, raw=raw_content, name=extracted))
                 continue
 
             # Pass arguments as-is - Strands validates against tool schema
@@ -152,23 +158,3 @@ class HermesToolParser(ToolParser):
             )
 
         return tool_calls
-
-    def _make_error_tool_call(
-        self,
-        raw_content: str,
-        tool_call_id: str,
-        error: Exception,
-    ) -> ToolParseResult:
-        """Create an error tool call for parse failures."""
-        # Try to extract tool name even from malformed JSON
-        name_match = self._NAME_PATTERN.search(raw_content)
-        name = name_match.group(1) if name_match else UNKNOWN_TOOL_NAME
-
-        logger.warning(f"Tool call parse error: {error}")
-
-        return ToolParseResult(
-            id=tool_call_id,
-            name=name,
-            input={},
-            raw=raw_content,
-        )

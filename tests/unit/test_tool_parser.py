@@ -17,7 +17,6 @@
 import pytest
 
 from strands_sglang.tool_parsers import (
-    UNKNOWN_TOOL_NAME,
     GLMToolParser,
     HermesToolParser,
     QwenXMLToolParser,
@@ -205,7 +204,7 @@ class TestHermesToolParser:
 
         assert len(results) == 1
         assert results[0].is_error is True
-        assert results[0].name == UNKNOWN_TOOL_NAME
+        assert results[0].name == ToolParseResult.UNKNOWN_NAME
 
     def test_parse_empty_name(self, parser):
         """Empty string name creates error result."""
@@ -230,7 +229,7 @@ class TestHermesToolParser:
 
         assert len(results) == 1
         assert results[0].is_error is True
-        assert results[0].name == UNKNOWN_TOOL_NAME
+        assert results[0].name == ToolParseResult.UNKNOWN_NAME
 
     def test_parse_null_json(self, parser):
         """Null JSON creates error result."""
@@ -252,13 +251,13 @@ class TestHermesToolParser:
         assert results[0].name == "my_tool"  # Extracted via regex!
 
     def test_fallback_to_unknown_when_no_name(self, parser):
-        """Fall back to UNKNOWN_TOOL_NAME when name can't be extracted."""
+        """Fall back to ToolParseResult.UNKNOWN_NAME when name can't be extracted."""
         text = "<tool_call>{completely broken}</tool_call>"
         results = parser.parse(text)
 
         assert len(results) == 1
         assert results[0].is_error is True
-        assert results[0].name == UNKNOWN_TOOL_NAME
+        assert results[0].name == ToolParseResult.UNKNOWN_NAME
 
     # --- Whitespace Handling ---
 
@@ -622,7 +621,7 @@ if __name__ == "__main__":
 
         assert len(results) == 1
         assert results[0].is_error is True
-        assert results[0].name == UNKNOWN_TOOL_NAME
+        assert results[0].name == ToolParseResult.UNKNOWN_NAME
 
     def test_parse_empty_function_name(self, parser):
         """Empty function name creates error result."""
@@ -972,7 +971,7 @@ if __name__ == "__main__":
 
         assert len(results) == 1
         assert results[0].is_error is True
-        assert results[0].name == UNKNOWN_TOOL_NAME
+        assert results[0].name == ToolParseResult.UNKNOWN_NAME
 
     def test_parse_whitespace_only_function_name(self, parser):
         """Whitespace-only function name creates error result."""

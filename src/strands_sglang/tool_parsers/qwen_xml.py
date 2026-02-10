@@ -21,7 +21,7 @@ import re
 
 from typing_extensions import override
 
-from .base import UNKNOWN_TOOL_NAME, ToolParser, ToolParseResult, register_tool_parser
+from .base import ToolParser, ToolParseResult, register_tool_parser
 
 logger = logging.getLogger(__name__)
 
@@ -129,14 +129,16 @@ class QwenXMLToolParser(ToolParser):
             # Parse the function tag
             func_match = self._FUNCTION_PATTERN.search(raw_content)
             if not func_match:
-                tool_calls.append(self._make_error_tool_call(raw_content, tool_call_id, "missing <function=...> tag"))
+                logger.warning("Tool parse error: missing <function=...> tag")
+                tool_calls.append(ToolParseResult.from_parse_error(id=tool_call_id, raw=raw_content))
                 continue
 
             func_name = func_match.group(1).strip()
             func_body = func_match.group(2)
 
             if not func_name:
-                tool_calls.append(self._make_error_tool_call(raw_content, tool_call_id, "empty function name"))
+                logger.warning("Tool parse error: empty function name")
+                tool_calls.append(ToolParseResult.from_parse_error(id=tool_call_id, raw=raw_content))
                 continue
 
             # Parse all parameters from the function body
@@ -156,23 +158,3 @@ class QwenXMLToolParser(ToolParser):
             )
 
         return tool_calls
-
-    def _make_error_tool_call(
-        self,
-        raw_content: str,
-        tool_call_id: str,
-        error: str,
-    ) -> ToolParseResult:
-        """Create an error tool call for parse failures."""
-        # Try to extract function name from malformed content
-        func_match = self._FUNCTION_PATTERN.search(raw_content)
-        name = func_match.group(1).strip() if func_match else UNKNOWN_TOOL_NAME
-
-        logger.warning(f"Tool call parse error: {error}")
-
-        return ToolParseResult(
-            id=tool_call_id,
-            name=name,
-            input={},
-            raw=raw_content,
-        )

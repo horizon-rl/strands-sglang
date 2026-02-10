@@ -19,10 +19,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, TypeVar
-
-# Fallback tool name when we can't identify which tool the model tried to call
-UNKNOWN_TOOL_NAME = "unknown_tool"
+from typing import Any, Callable, ClassVar, TypeVar
 
 # Parser registry - populated by @register_tool_parser decorator
 TOOL_PARSER_REGISTRY: dict[str, type[ToolParser]] = {}
@@ -30,18 +27,31 @@ TOOL_PARSER_REGISTRY: dict[str, type[ToolParser]] = {}
 T = TypeVar("T", bound="ToolParser")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ToolParseResult:
     """A parsed tool call request.
 
     For successful parses: name and input are populated, raw is None.
-    For parse errors: name is extracted or UNKNOWN_TOOL_NAME, raw contains the unparseable content.
+    For parse errors: name is extracted or UNKNOWN_NAME, raw contains the unparseable content.
     """
+
+    UNKNOWN_NAME: ClassVar[str] = "unknown_tool"
 
     id: str
     name: str
     input: dict[str, Any] = field(default_factory=dict)
     raw: str | None = None
+
+    @classmethod
+    def from_parse_error(cls, id: str, raw: str, name: str | None = None) -> ToolParseResult:
+        """Create an error result for parse failures.
+
+        Args:
+            id: Tool call ID.
+            raw: The unparseable raw content (fed back to model for self-correction).
+            name: Best-effort extracted tool name (defaults to UNKNOWN_NAME).
+        """
+        return cls(id=id, name=name if name is not None else cls.UNKNOWN_NAME, input={}, raw=raw)
 
     @property
     def is_error(self) -> bool:
