@@ -4,7 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/strands-sglang.svg)](https://pypi.org/project/strands-sglang/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-SGLang model provider for [Strands Agents SDK](https://github.com/strands-agents/sdk-python) with Token-In/Token-Out (TITO) rollouts for on-policy agentic RL training (no retokenization drift) [[Blog](https://splendid-farmer-2d0.notion.site/Bridging-Agent-Scaffolding-and-RL-Training-with-Strands-SGLang-2e655dc580e680e28c78f6d743ab987f)].
+SGLang model provider for [Strands Agents SDK](https://github.com/strands-agents/sdk-python) with Token-in/Token-out rollouts for on-policy agentic RL training (no retokenization drift) [[Blog](https://splendid-farmer-2d0.notion.site/Bridging-Agent-Scaffolding-and-RL-Training-with-Strands-SGLang-2e655dc580e680e28c78f6d743ab987f)].
 
 > ✅ **Featured in Strands Agents Docs**: [Community Model Provider: SGLang](https://strandsagents.com/latest/documentation/docs/community/model-providers/sglang/)
 
