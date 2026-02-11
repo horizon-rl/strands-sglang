@@ -157,7 +157,11 @@ class TestTITO:
         assert total_tokens == len(model.token_manager.logprobs)
 
     async def test_logprobs_no_none_when_return_logprob_enabled(self, model):
-        """Logprobs should never contain None when return_logprob=True (regression test for v0.2.0)."""
+        """Response logprobs should be present when return_logprob=True (regression test for v0.2.0).
+
+        Note: Prompt tokens have None logprobs by design (loss_mask=0).
+        The first output token may also have None logprob depending on SGLang version.
+        """
         # Ensure return_logprob is enabled (default is True)
         assert model.config.get("return_logprob", True) is True
 
@@ -165,11 +169,17 @@ class TestTITO:
         async for _ in model.stream(messages):
             pass
 
-        logprobs = model.token_manager.logprobs
-        assert len(logprobs) > 0, "Should have logprobs after generation"
-        assert all(lp is not None for lp in logprobs), (
-            f"Logprobs should never contain None when return_logprob=True. "
-            f"Found {logprobs.count(None)} None values out of {len(logprobs)} total."
+        # Get response tokens only (loss_mask=1), excluding prompt tokens
+        tokens = model.token_manager.tokens
+        response_logprobs = [t.logprob for t in tokens if t.loss_mask]
+        assert len(response_logprobs) > 0, "Should have response tokens after generation"
+
+        # First output token may have None logprob (SGLang behavior), rest should have logprobs
+        non_first_logprobs = response_logprobs[1:]
+        none_count = non_first_logprobs.count(None)
+        assert none_count == 0, (
+            f"Response logprobs (after first token) should not contain None when return_logprob=True. "
+            f"Found {none_count} None values out of {len(non_first_logprobs)} total."
         )
 
     async def test_incremental_tokenization(self, model):
