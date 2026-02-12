@@ -27,6 +27,7 @@ throughout the rollout instead of converting text back to tokens.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import (
     TYPE_CHECKING,
@@ -36,6 +37,7 @@ from typing import (
     Iterator,
     Type,
     TypedDict,
+    TypeVar,
     cast,
 )
 
@@ -60,6 +62,8 @@ if TYPE_CHECKING:
     from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class SGLangModel(Model):
@@ -425,16 +429,66 @@ class SGLangModel(Model):
     @override
     async def structured_output(
         self,
-        output_model: Type[BaseModel],
+        output_model: Type[T],
         prompt: Messages,
         system_prompt: str | None = None,
         **kwargs: Any,
-    ) -> AsyncGenerator[dict[str, BaseModel | Any], None]:
-        """Not implemented for training-only model.
+    ) -> AsyncGenerator[dict[str, T | Any], None]:
+        """Get structured output using SGLang's constrained decoding.
+
+        Uses SGLang's `json_schema` parameter for FSM-based constrained generation,
+        guaranteeing output conforms to the Pydantic model schema.
+
+        Note: This method does NOT update token_manager (no TITO tracking).
+        Intended for inference-only use cases like LLM-as-Judge.
+
+        Args:
+            output_model: Pydantic model class defining the output schema.
+            prompt: Messages to send to the model.
+            system_prompt: Optional system prompt.
+            **kwargs: Additional arguments (unused).
+
+        Yields:
+            Single dict with "output" key containing the parsed Pydantic model instance.
 
         Raises:
-            NotImplementedError: Always.
+            ValidationError: If model output fails Pydantic validation.
+            httpx.HTTPStatusError: On non-retryable HTTP errors.
         """
-        raise NotImplementedError("structured_output is not supported by SGLangModel (training-only)")
-        # Make this a generator to satisfy the type signature
-        yield {}  # pragma: no cover
+        # Convert Pydantic model to JSON schema string
+        json_schema = json.dumps(output_model.model_json_schema())
+
+        # Format and tokenize prompt (no tools for structured output)
+        formatted = self.format_prompt(prompt, system_prompt, tools=None)
+        input_ids = self.tokenizer.encode(formatted, add_special_tokens=False)
+
+        # Build sampling params with json_schema constraint
+        config = self.get_config()
+        sampling_params: dict[str, Any] = dict(config.get("sampling_params") or {})
+        sampling_params["json_schema"] = json_schema
+
+        # Call SGLang /generate endpoint
+        try:
+            response = await self.client.generate(
+                input_ids=input_ids,
+                sampling_params=sampling_params,
+                return_logprob=False,  # No need for logprobs in structured output
+            )
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code
+            error_text = e.response.text.lower()
+            # Context/prompt length exceeded
+            if status == 400:
+                length_patterns = ["exceed", "too long", "max model len", "maximum length", "context length"]
+                if any(p in error_text for p in length_patterns):
+                    raise ContextWindowOverflowException(f"Context length exceeded: {e.response.text}") from e
+            # Rate limiting / service unavailable
+            if status in (429, 503):
+                raise ModelThrottledException(f"Service throttled (status={status}): {e.response.text}") from e
+            raise
+
+        # Parse and validate response
+        text = response.get("text", "")
+        parsed = output_model.model_validate_json(text)
+
+        yield {"output": parsed}
