@@ -16,11 +16,11 @@
 
 Aligned with slime's http_utils.py for RL training stability:
 - Aggressive retry (60 attempts by default)
-- Retries on all transient errors (like slime)
-- Infinite timeout by default for long generations
+- Retries on all transient errors
+- 15mins timeout by default for long generations
 - Non-streaming POST for better parallelism (no SSE overhead)
 
-Uses aiohttp for high-concurrency performance, aligned with SGLang's own RuntimeEndpoint client.
+Uses aiohttp for high-concurrency performance.
 """
 
 from __future__ import annotations
