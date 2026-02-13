@@ -23,10 +23,7 @@ Usage:
 The model ID is auto-detected from the server's /get_model_info endpoint.
 """
 
-import json
-import urllib.request
-import urllib.error
-
+import httpx
 import pytest
 from transformers import AutoTokenizer
 
@@ -49,22 +46,20 @@ def _get_server_info(base_url: str, timeout: float = 5.0) -> dict:
     """
     # Health check
     try:
-        req = urllib.request.Request(f"{base_url}/health")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            if resp.status != 200:
-                pytest.exit(f"SGLang server unhealthy: status {resp.status}", returncode=1)
-    except urllib.error.URLError as e:
-        pytest.exit(f"Cannot connect to {base_url} - is the server running? ({e})", returncode=1)
-    except TimeoutError:
+        response = httpx.get(f"{base_url}/health", timeout=timeout)
+        if response.status_code != 200:
+            pytest.exit(f"SGLang server unhealthy: status {response.status_code}", returncode=1)
+    except httpx.ConnectError:
+        pytest.exit(f"Cannot connect to {base_url} - is the server running?", returncode=1)
+    except httpx.TimeoutException:
         pytest.exit(f"Connection to {base_url} timed out", returncode=1)
     except Exception as e:
         pytest.exit(f"Health check failed: {e}", returncode=1)
 
     # Get model info
     try:
-        req = urllib.request.Request(f"{base_url}/get_model_info")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read())
+        response = httpx.get(f"{base_url}/get_model_info", timeout=timeout)
+        return response.json()
     except Exception as e:
         pytest.exit(f"Failed to get model info: {e}", returncode=1)
 
