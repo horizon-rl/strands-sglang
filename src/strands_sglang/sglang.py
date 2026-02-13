@@ -86,8 +86,8 @@ class SGLangModel(Model):
 
         sampling_params: dict[str, Any] | None  # Passed to /generate endpoint
         return_logprob: bool | None  # Return logprobs for all tokens (default: True)
-        return_routed_experts: bool | None  # Record MoE routing decisions for routing replay
         enable_thinking: bool | None  # Enable thinking mode for Qwen3 hybrid models
+        return_routed_experts: bool | None  # Record MoE routing decisions for routing replay
 
     def __init__(
         self,

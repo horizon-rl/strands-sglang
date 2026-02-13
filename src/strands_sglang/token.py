@@ -83,70 +83,6 @@ class TokenManager:
         self._segments = []
         self._routed_expert_chunks = []
 
-    @property
-    def tokens(self) -> list[Token]:
-        """Get all tokens as a flat list."""
-        return [token for segment in self._segments for token in segment]
-
-    @property
-    def token_ids(self) -> list[int]:
-        """Get all token IDs as a flat list."""
-        return [token.token_id for token in self.tokens]
-
-    @property
-    def loss_mask(self) -> list[int]:
-        """Get loss mask for all tokens (1 = model output, 0 = prompt/tool).
-
-        Use this for loss computation in RL training - only compute loss
-        on tokens where mask is 1 (model outputs).
-        """
-        return [int(token.loss_mask) for token in self.tokens]
-
-    @property
-    def logprobs(self) -> list[float | None]:
-        """Get log probabilities for all tokens."""
-        return [token.logprob for token in self.tokens]
-
-    @property
-    def routed_experts(self) -> str | None:
-        """Get accumulated routed experts as a base64-encoded string.
-
-        Returns the concatenation of all chunks collected via
-        :pymeth:`add_routed_experts`, re-encoded as a single base64 string
-        matching the format returned by SGLang's ``/generate`` endpoint.
-
-        Returns:
-            Base64-encoded string of int32 expert IDs with logical shape
-            ``[total_tokens, num_layers, top_k]``, or ``None`` if no routing
-            data has been recorded.
-        """
-        if not self._routed_expert_chunks:
-            return None
-        return base64.b64encode(b"".join(self._routed_expert_chunks)).decode("ascii")
-
-    @property
-    def initial_prompt(self) -> list[Token]:
-        """Get the initial prompt tokens (segments[0]).
-
-        This is the full input context from the first generation call:
-        system prompt + tool definitions + user message (or conversation history).
-        """
-        return self._segments[0] if self._segments else []
-
-    @property
-    def segments(self) -> list[list[Token]]:
-        """Get tokens organized by segment."""
-        return self._segments
-
-    @property
-    def segment_info(self) -> list[tuple[bool, int]]:
-        """Get segment metadata (is_output, length) for each segment.
-
-        Returns:
-            List of (is_output, segment_length) tuples.
-        """
-        return [(seg[0].loss_mask if seg else False, len(seg)) for seg in self._segments]
-
     def add_prompt(self, token_ids: list[int], logprobs: list[float] | None = None) -> None:
         """Add a prompt segment (system messages, user input, tool results).
 
@@ -204,6 +140,70 @@ class TokenManager:
             data: Base64-encoded routed experts string from ``meta_info["routed_experts"]``.
         """
         self._routed_expert_chunks.append(base64.b64decode(data))
+
+    @property
+    def routed_experts(self) -> str | None:
+        """Get accumulated routed experts as a base64-encoded string.
+
+        Returns the concatenation of all chunks collected via
+        :pymeth:`add_routed_experts`, re-encoded as a single base64 string
+        matching the format returned by SGLang's ``/generate`` endpoint.
+
+        Returns:
+            Base64-encoded string of int32 expert IDs with logical shape
+            ``[total_tokens, num_layers, top_k]``, or ``None`` if no routing
+            data has been recorded.
+        """
+        if not self._routed_expert_chunks:
+            return None
+        return base64.b64encode(b"".join(self._routed_expert_chunks)).decode("ascii")
+
+    @property
+    def tokens(self) -> list[Token]:
+        """Get all tokens as a flat list."""
+        return [token for segment in self._segments for token in segment]
+
+    @property
+    def token_ids(self) -> list[int]:
+        """Get all token IDs as a flat list."""
+        return [token.token_id for token in self.tokens]
+
+    @property
+    def loss_mask(self) -> list[int]:
+        """Get loss mask for all tokens (1 = model output, 0 = prompt/tool).
+
+        Use this for loss computation in RL training - only compute loss
+        on tokens where mask is 1 (model outputs).
+        """
+        return [int(token.loss_mask) for token in self.tokens]
+
+    @property
+    def logprobs(self) -> list[float | None]:
+        """Get log probabilities for all tokens."""
+        return [token.logprob for token in self.tokens]
+
+    @property
+    def initial_prompt(self) -> list[Token]:
+        """Get the initial prompt tokens (segments[0]).
+
+        This is the full input context from the first generation call:
+        system prompt + tool definitions + user message (or conversation history).
+        """
+        return self._segments[0] if self._segments else []
+
+    @property
+    def segments(self) -> list[list[Token]]:
+        """Get tokens organized by segment."""
+        return self._segments
+
+    @property
+    def segment_info(self) -> list[tuple[bool, int]]:
+        """Get segment metadata (is_output, length) for each segment.
+
+        Returns:
+            List of (is_output, segment_length) tuples.
+        """
+        return [(seg[0].loss_mask if seg else False, len(seg)) for seg in self._segments]
 
     def __len__(self) -> int:
         """Return total number of tokens."""
