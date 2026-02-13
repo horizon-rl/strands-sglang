@@ -78,15 +78,16 @@ MULTI_CALC_PROBLEM = "Calculate 10+5, 20+10, and 30+15 using the calculator."
 
 
 @pytest.fixture
-def fresh_model(tokenizer, sglang_base_url):
+async def fresh_model(tokenizer, sglang_base_url):
     """Create a fresh SGLangModel for each test."""
     client = SGLangClient(base_url=sglang_base_url)
-    return SGLangModel(
+    yield SGLangModel(
         client=client,
         tokenizer=tokenizer,
         tool_parser=HermesToolParser(),
         sampling_params={"max_new_tokens": 32768},
     )
+    await client.close()
 
 
 # =============================================================================

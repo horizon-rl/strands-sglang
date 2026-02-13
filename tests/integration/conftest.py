@@ -23,7 +23,10 @@ Usage:
 The model ID is auto-detected from the server's /get_model_info endpoint.
 """
 
-import httpx
+import json
+import urllib.request
+import urllib.error
+
 import pytest
 from transformers import AutoTokenizer
 
@@ -46,20 +49,22 @@ def _get_server_info(base_url: str, timeout: float = 5.0) -> dict:
     """
     # Health check
     try:
-        response = httpx.get(f"{base_url}/health", timeout=timeout)
-        if response.status_code != 200:
-            pytest.exit(f"SGLang server unhealthy: status {response.status_code}", returncode=1)
-    except httpx.ConnectError:
-        pytest.exit(f"Cannot connect to {base_url} - is the server running?", returncode=1)
-    except httpx.TimeoutException:
+        req = urllib.request.Request(f"{base_url}/health")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status != 200:
+                pytest.exit(f"SGLang server unhealthy: status {resp.status}", returncode=1)
+    except urllib.error.URLError as e:
+        pytest.exit(f"Cannot connect to {base_url} - is the server running? ({e})", returncode=1)
+    except TimeoutError:
         pytest.exit(f"Connection to {base_url} timed out", returncode=1)
     except Exception as e:
         pytest.exit(f"Health check failed: {e}", returncode=1)
 
     # Get model info
     try:
-        response = httpx.get(f"{base_url}/get_model_info", timeout=timeout)
-        return response.json()
+        req = urllib.request.Request(f"{base_url}/get_model_info")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
     except Exception as e:
         pytest.exit(f"Failed to get model info: {e}", returncode=1)
 
@@ -87,15 +92,16 @@ def tokenizer(sglang_server_info):
 
 
 @pytest.fixture
-def model(tokenizer, sglang_base_url):
+async def model(tokenizer, sglang_base_url):
     """Create fresh SGLangModel for each test (perfect isolation)."""
     client = SGLangClient(base_url=sglang_base_url)
-    return SGLangModel(
+    yield SGLangModel(
         client=client,
         tokenizer=tokenizer,
         tool_parser=HermesToolParser(),
         sampling_params={"max_new_tokens": 32768},
     )
+    await client.close()
 
 
 @pytest.fixture

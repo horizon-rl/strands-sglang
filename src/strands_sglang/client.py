@@ -19,16 +19,26 @@ Aligned with slime's http_utils.py for RL training stability:
 - Retries on all transient errors (like slime)
 - Infinite timeout by default for long generations
 - Non-streaming POST for better parallelism (no SSE overhead)
+
+Uses aiohttp for high-concurrency performance, aligned with SGLang's own RuntimeEndpoint client.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from typing import Any
 
-import httpx
+import aiohttp
+
+from .exceptions import (
+    SGLangClientError,
+    SGLangConnectionError,
+    SGLangContextLengthError,
+    SGLangDecodingError,
+    SGLangHTTPError,
+    SGLangThrottledError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +57,10 @@ DEFAULT_MAX_CONNECTIONS = 1000
 # - 408/409/429/5xx: Retry (same as OpenAI SDK)
 # - Connection errors: Retry (same as OpenAI SDK)
 NON_RETRYABLE_STATUS_CODES = {401, 403, 404}  # Auth failed, forbidden, endpoint not found
+
+# Single-source-of-truth patterns for context length errors in SGLang responses.
+# Used by _classify_http_error to detect non-retryable 400 errors.
+CONTEXT_LENGTH_PATTERNS = ("exceed", "too long", "maximum length", "context length")
 
 
 class SGLangClient:
@@ -94,22 +108,29 @@ class SGLangClient:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
-        # timeout=None means infinite wait (like slime's httpx.Timeout(None))
-        http_timeout = httpx.Timeout(timeout, connect=connect_timeout) if timeout else httpx.Timeout(None)
-
-        # FIX: Set max_keepalive_connections equal to max_connections to avoid connection churn
-        # By default httpx only keeps 20 connections alive, which can cause issues with high concurrency
-        self._client = httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=http_timeout,
-            limits=httpx.Limits(max_connections=max_connections, max_keepalive_connections=max_connections),
-        )
+        # Store config for lazy session creation (avoids aiohttp warning about creating session outside event loop)
+        self._max_connections = max_connections
+        self._timeout = aiohttp.ClientTimeout(total=timeout, connect=connect_timeout)
+        self._connector: aiohttp.TCPConnector | None = None
+        self._session: aiohttp.ClientSession | None = None
 
         logger.info(
             f"SGLangClient initialized: base_url={self.base_url}, "
-            f"max_connections={max_connections}, max_keepalive={max_connections}, "
+            f"max_connections={max_connections}, "
             f"timeout={timeout}, max_retries={max_retries}"
         )
+
+    def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create the aiohttp session (lazy initialization)."""
+        if self._session is None or self._session.closed:
+            self._connector = aiohttp.TCPConnector(limit=self._max_connections)
+            self._session = aiohttp.ClientSession(
+                base_url=self.base_url,
+                timeout=self._timeout,
+                connector=self._connector,
+                connector_owner=False,  # Connector outlives session, managed in close()
+            )
+        return self._session
 
     @classmethod
     def from_slime_args(cls, args: Any, **overrides: Any) -> SGLangClient:
@@ -119,7 +140,7 @@ class SGLangClient:
 
             max_connections = concurrency * (num_gpus / gpus_per_engine)
 
-        where `num_gpus ÷ gpus_per_engine` is the number of SGLang server instances,
+        where `num_gpus / gpus_per_engine` is the number of SGLang server instances,
         and `concurrency` is the max concurrent requests each instance can handle.
         This ensures enough connections to fully saturate all server instances.
 
@@ -148,7 +169,20 @@ class SGLangClient:
 
     async def close(self) -> None:
         """Close the HTTP client and release connections."""
-        await self._client.aclose()
+        if self._session and not self._session.closed:
+            await self._session.close()
+        if self._connector and not self._connector.closed:
+            await self._connector.close()
+
+    def __del__(self) -> None:
+        """Best-effort cleanup on garbage collection.
+
+        In RL training (e.g., slime), the client lives for the entire process and
+        there's no natural place to call close(). The OS reclaims resources on exit,
+        but this suppresses aiohttp's "Unclosed connector" warnings during shutdown.
+        """
+        if self._connector and not self._connector.closed:
+            self._connector._close()
 
     async def __aenter__(self) -> SGLangClient:
         """Enter async context manager."""
@@ -158,6 +192,34 @@ class SGLangClient:
         """Exit async context manager."""
         await self.close()
 
+    @staticmethod
+    def _classify_http_error(status: int, body: str) -> SGLangHTTPError:
+        """Classify an HTTP error into a specific custom exception.
+
+        This is the single source of truth for error classification. All HTTP errors
+        from SGLang are mapped to custom exceptions here, so that sglang.py never
+        needs to inspect raw status codes or response bodies.
+
+        Args:
+            status: HTTP status code.
+            body: Response body text.
+
+        Returns:
+            Appropriate SGLangHTTPError subclass instance.
+        """
+        # Context length exceeded (400 + length keywords) — non-retryable
+        if status == 400:
+            body_lower = body.lower()
+            if any(p in body_lower for p in CONTEXT_LENGTH_PATTERNS):
+                return SGLangContextLengthError(f"Context length exceeded (400): {body}", status=status, body=body)
+
+        # Rate-limited or temporarily unavailable — retryable
+        if status in (429, 503):
+            return SGLangThrottledError(f"Service throttled ({status}): {body}", status=status, body=body)
+
+        # All other HTTP errors
+        return SGLangHTTPError(f"HTTP {status}: {body}", status=status, body=body)
+
     def _is_retryable_error(self, e: Exception) -> bool:
         """Check if an error is retryable.
 
@@ -166,22 +228,18 @@ class SGLangClient:
 
         Non-retryable:
         - 401/403/404: Auth/routing errors that won't self-resolve
-        - 400 with "context length exceeded": Prompt too long, retrying won't help
+        - 400 with context length keywords: Prompt too long, retrying won't help
         """
-        if isinstance(e, httpx.HTTPStatusError):
-            status = e.response.status_code
-            # Don't retry auth/routing errors
-            if status in NON_RETRYABLE_STATUS_CODES:
+        if isinstance(e, SGLangHTTPError):
+            # Non-retryable: auth/routing errors
+            if e.status in NON_RETRYABLE_STATUS_CODES:
                 return False
-            # Don't retry context length errors (retrying won't help)
-            if status == 400:
-                error_text = e.response.text.lower()
-                length_patterns = ["exceed", "too long", "max model len", "maximum length", "context length"]
-                if any(p in error_text for p in length_patterns):
-                    return False
+            # Non-retryable: context length exceeded
+            if isinstance(e, SGLangContextLengthError):
+                return False
             # Retry everything else: 5xx, 408, 429, other 400s, etc.
             return True
-        # Retry all connection/timeout errors
+        # Retry all connection/timeout/decoding errors
         return True
 
     async def generate(self, input_ids: list[int], **kwargs: Any) -> dict[str, Any]:
@@ -195,9 +253,11 @@ class SGLangClient:
             Response dict with text, output_ids, meta_info (logprobs, finish_reason, etc.).
 
         Raises:
-            httpx.HTTPStatusError: For non-retryable errors (401, 403, 404, context length exceeded)
-                or after all retries exhausted. Other 400 errors are retried.
-            httpx.ConnectError: For connection failures after retries exhausted.
+            SGLangContextLengthError: When prompt exceeds model's maximum context length.
+            SGLangThrottledError: On 429 or 503 responses.
+            SGLangHTTPError: For non-retryable HTTP errors (401, 403, 404) or after all retries exhausted.
+            SGLangConnectionError: For connection/timeout failures after retries exhausted.
+            SGLangDecodingError: When server returns non-JSON response after retries exhausted.
         """
         payload: dict[str, Any] = {
             "input_ids": input_ids,
@@ -206,53 +266,54 @@ class SGLangClient:
         }
 
         last_error: Exception | None = None
+        session = self._get_session()
 
         for attempt in range(self.max_retries + 1):
-            response = None
             try:
-                response = await self._client.post("/generate", json=payload)
-                response.raise_for_status()
-                # Fully consume body before closing (aligned with slime #1488)
-                content = await response.aread()
-                try:
-                    return json.loads(content)
-                except json.JSONDecodeError as e:
-                    # Non-JSON response — treat as retryable error
-                    preview = content.decode(errors="replace")[:200]
-                    raise httpx.DecodingError(f"Invalid JSON response: {preview}") from e
+                async with session.post("/generate", json=payload) as resp:
+                    if resp.status >= 400:
+                        body = await resp.text()
+                        raise self._classify_http_error(resp.status, body)
 
-            except Exception as e:
+                    # Success path: parse JSON directly
+                    try:
+                        return await resp.json(content_type=None)
+                    except Exception as e:
+                        # Non-JSON response — treat as retryable error
+                        raise SGLangDecodingError(f"Invalid JSON response: {e}") from e
+
+            except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as e:
+                last_error = SGLangConnectionError(str(e))
+                last_error.__cause__ = e
+
+            except SGLangClientError as e:
                 last_error = e
 
                 # Check if error is retryable
                 if not self._is_retryable_error(e):
-                    raise  # Non-retryable error (e.g., 400 Bad Request)
-
-                # Log and retry
-                response_text = e.response.text if isinstance(e, httpx.HTTPStatusError) else None
-                if attempt < self.max_retries:
-                    logger.warning(
-                        f"SGLang request failed (attempt {attempt + 1}/{self.max_retries + 1}): "
-                        f"{type(e).__name__}: {e}, response={response_text}. Retrying in {self.retry_delay}s..."
-                    )
-                    await asyncio.sleep(self.retry_delay)
-                else:
-                    logger.error(
-                        f"SGLang request failed after {self.max_retries + 1} attempts: "
-                        f"{type(e).__name__}: {e}, response={response_text}"
-                    )
                     raise
-            finally:
-                # Ensure response is closed to release connection back to pool (slime #1520)
-                if response is not None:
-                    await response.aclose()
 
-        # Should not reach here, but just in case
-        if last_error:
-            raise last_error
+            except Exception as e:
+                # Unexpected errors — wrap to prevent library internals leaking
+                last_error = SGLangClientError(str(e))
+                last_error.__cause__ = e
 
-        # This should never happen, but satisfies type checker
-        raise RuntimeError("Unexpected state in generate()")
+            # Log and retry
+            error_detail = str(last_error)
+            if attempt < self.max_retries:
+                logger.warning(
+                    f"SGLang request failed (attempt {attempt + 1}/{self.max_retries + 1}): "
+                    f"{type(last_error).__name__}: {error_detail}. Retrying in {self.retry_delay}s..."
+                )
+                await asyncio.sleep(self.retry_delay)
+            else:
+                logger.error(
+                    f"SGLang request failed after {self.max_retries + 1} attempts: "
+                    f"{type(last_error).__name__}: {error_detail}"
+                )
+                raise last_error
+
+        raise RuntimeError("Unreachable: loop must return or raise")
 
     async def health(self) -> bool:
         """Check if SGLang server is healthy.
@@ -261,10 +322,10 @@ class SGLangClient:
             True if server responds OK to `/health` endpoint, False otherwise.
         """
         try:
-            response = await self._client.get("/health")
-            response.raise_for_status()
-            return True
-        except httpx.HTTPError:
+            session = self._get_session()
+            async with session.get("/health") as resp:
+                return resp.status == 200
+        except Exception:
             return False
 
     async def get_model_info(self) -> dict[str, Any] | None:
@@ -277,8 +338,10 @@ class SGLangClient:
             - tokenizer_path: Tokenizer path (may differ from model_path)
         """
         try:
-            response = await self._client.get("/get_model_info")
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPError:
+            session = self._get_session()
+            async with session.get("/get_model_info") as resp:
+                if resp.status >= 400:
+                    return None
+                return await resp.json(content_type=None)
+        except Exception:
             return None

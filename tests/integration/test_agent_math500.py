@@ -148,18 +148,19 @@ MATH500_PROBLEMS = [
 
 
 @pytest.fixture
-def model(tokenizer, sglang_base_url):
+async def model(tokenizer, sglang_base_url):
     """Create fresh SGLangModel for each test (perfect isolation).
 
     Overrides the base model fixture to add max_new_tokens limit.
     """
     client = SGLangClient(base_url=sglang_base_url)
-    return SGLangModel(
+    yield SGLangModel(
         client=client,
         tokenizer=tokenizer,
         tool_parser=HermesToolParser(),
         sampling_params={"max_new_tokens": 32768},  # High limit for thinking models
     )
+    await client.close()
 
 
 @pytest.fixture

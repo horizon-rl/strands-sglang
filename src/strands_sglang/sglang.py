@@ -41,7 +41,6 @@ from typing import (
     cast,
 )
 
-import httpx
 from pydantic import BaseModel
 from strands.models import Model
 from strands.models.openai import OpenAIModel
@@ -55,6 +54,7 @@ from strands.types.tools import ToolChoice, ToolSpec
 from typing_extensions import Unpack, override
 
 from .client import SGLangClient
+from .exceptions import SGLangContextLengthError, SGLangThrottledError
 from .token import TokenManager
 from .tool_parsers import HermesToolParser, ToolParser, ToolParseResult
 
@@ -372,20 +372,10 @@ class SGLangModel(Model):
             if text:
                 yield {"contentBlockDelta": {"delta": {"text": text}}}
 
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code
-            error_text = e.response.text.lower()
-            # Context/prompt length exceeded (various SGLang error patterns)
-            if status == 400:
-                length_patterns = ["exceed", "too long", "max model len", "maximum length", "context length"]
-                if any(p in error_text for p in length_patterns):
-                    raise ContextWindowOverflowException(f"Context length exceeded: {e.response.text}") from e
-                # Log unexpected 400 errors for debugging
-                logger.warning(f"Unexpected 400 error: {e.response.text}")
-            # Rate limiting / service unavailable
-            if status in (429, 503):
-                raise ModelThrottledException(f"Service throttled (status={status}): {e.response.text}") from e
-            raise  # Re-raise other HTTP errors
+        except SGLangContextLengthError as e:
+            raise ContextWindowOverflowException(f"Context length exceeded: {e.body}") from e
+        except SGLangThrottledError as e:
+            raise ModelThrottledException(f"Service throttled (status={e.status}): {e.body}") from e
 
         # Update token trajectory
         if new_input_tokens:
@@ -453,7 +443,7 @@ class SGLangModel(Model):
 
         Raises:
             ValidationError: If model output fails Pydantic validation.
-            httpx.HTTPStatusError: On non-retryable HTTP errors.
+            SGLangHTTPError: On non-retryable HTTP errors.
         """
         # Convert Pydantic model to JSON schema string
         json_schema = json.dumps(output_model.model_json_schema())
@@ -474,18 +464,10 @@ class SGLangModel(Model):
                 sampling_params=sampling_params,
                 return_logprob=False,  # No need for logprobs in structured output
             )
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code
-            error_text = e.response.text.lower()
-            # Context/prompt length exceeded
-            if status == 400:
-                length_patterns = ["exceed", "too long", "max model len", "maximum length", "context length"]
-                if any(p in error_text for p in length_patterns):
-                    raise ContextWindowOverflowException(f"Context length exceeded: {e.response.text}") from e
-            # Rate limiting / service unavailable
-            if status in (429, 503):
-                raise ModelThrottledException(f"Service throttled (status={status}): {e.response.text}") from e
-            raise
+        except SGLangContextLengthError as e:
+            raise ContextWindowOverflowException(f"Context length exceeded: {e.body}") from e
+        except SGLangThrottledError as e:
+            raise ModelThrottledException(f"Service throttled (status={e.status}): {e.body}") from e
 
         # Parse and validate response
         text = response.get("text", "")

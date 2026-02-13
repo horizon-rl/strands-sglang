@@ -13,6 +13,14 @@
 # limitations under the License.
 
 from .client import SGLangClient
+from .exceptions import (
+    SGLangClientError,
+    SGLangConnectionError,
+    SGLangContextLengthError,
+    SGLangDecodingError,
+    SGLangHTTPError,
+    SGLangThrottledError,
+)
 from .sglang import SGLangModel
 from .token import Token, TokenManager
 from .tool_limiter import MaxToolIterationsReachedError, ToolIterationLimiter
@@ -21,6 +29,13 @@ from .tool_parsers import get_tool_parser
 __all__ = [
     # Client
     "SGLangClient",
+    # Exceptions
+    "SGLangClientError",
+    "SGLangHTTPError",
+    "SGLangContextLengthError",
+    "SGLangThrottledError",
+    "SGLangConnectionError",
+    "SGLangDecodingError",
     # Model
     "SGLangModel",
     # Token management
