@@ -14,7 +14,9 @@
 
 """Unit tests for SGLangModel helper methods (no API calls needed)."""
 
-from unittest.mock import MagicMock
+import base64
+import struct
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -172,11 +174,7 @@ class TestExtractLogprobs:
 
     def test_extract_from_meta_info(self, model):
         """Extract logprobs from meta_info."""
-        event = {
-            "meta_info": {
-                "output_token_logprobs": [[-0.5, 100], [-0.3, 200], [-0.1, 300]]
-            }
-        }
+        event = {"meta_info": {"output_token_logprobs": [[-0.5, 100], [-0.3, 200], [-0.1, 300]]}}
         result = model._extract_logprobs(event, "output_token_logprobs")
 
         assert result == [-0.5, -0.3, -0.1]
@@ -215,9 +213,7 @@ class TestYieldToolUseEvents:
 
     def test_single_tool_call(self, model):
         """Yield events for single tool call."""
-        tool_calls = [
-            ToolParseResult(id="call_123", name="calculator", input={"expr": "2+2"})
-        ]
+        tool_calls = [ToolParseResult(id="call_123", name="calculator", input={"expr": "2+2"})]
         events = list(model._yield_tool_use_events(tool_calls))
 
         assert len(events) == 3
@@ -251,9 +247,7 @@ class TestYieldToolUseEvents:
 
     def test_error_tool_call(self, model):
         """Error tool call includes raw content."""
-        tool_calls = [
-            ToolParseResult(id="call_err", name="broken", input={}, raw="invalid json")
-        ]
+        tool_calls = [ToolParseResult(id="call_err", name="broken", input={}, raw="invalid json")]
         events = list(model._yield_tool_use_events(tool_calls))
 
         assert len(events) == 3
@@ -434,3 +428,240 @@ class TestSortToolResults:
         sorted_msgs = model._sort_tool_results(messages)
 
         assert sorted_msgs == messages
+
+
+# ---------------------------------------------------------------------------
+# Helpers for routing replay end-to-end tests
+# ---------------------------------------------------------------------------
+
+NUM_LAYERS = 2
+TOP_K = 2
+EXPERTS_PER_TOKEN = NUM_LAYERS * TOP_K  # int32 values per token
+
+
+def _make_routing_b64(expert_ids: list[int]) -> str:
+    """Encode int32 expert IDs to base64 (matching SGLang format)."""
+    return base64.b64encode(struct.pack(f"<{len(expert_ids)}i", *expert_ids)).decode("ascii")
+
+
+def _decode_routing_b64(data: str) -> list[int]:
+    """Decode base64 routing data back to int32 expert IDs."""
+    raw = base64.b64decode(data)
+    return list(struct.unpack(f"<{len(raw) // 4}i", raw))
+
+
+def _make_generate_response(
+    text: str,
+    output_ids: list[int],
+    num_input_tokens: int,
+    *,
+    include_routing: bool = False,
+) -> dict:
+    """Build a mock SGLang /generate response.
+
+    When include_routing is True, generates deterministic per-token routing
+    for the FULL sequence (position 0 to total-1), matching SGLang's actual
+    behavior. Token at position i gets experts [i*10, i*10+1, i*10+2, i*10+3].
+    """
+    num_output = len(output_ids)
+    total = num_input_tokens + num_output
+
+    meta_info = {
+        "finish_reason": {"type": "stop"},
+        "prompt_tokens": num_input_tokens,
+        "completion_tokens": num_output,
+        "e2e_latency": 0.1,
+    }
+
+    if include_routing:
+        expert_ids = []
+        for pos in range(total):
+            expert_ids.extend([pos * 10 + k for k in range(EXPERTS_PER_TOKEN)])
+        meta_info["routed_experts"] = _make_routing_b64(expert_ids)
+
+    input_logprobs = [[-0.1, tid] for tid in range(num_input_tokens)]
+    output_logprobs = [[-0.2, tid] for tid in output_ids]
+
+    return {
+        "text": text,
+        "output_ids": output_ids,
+        "meta_info": meta_info,
+        "input_token_logprobs": input_logprobs,
+        "output_token_logprobs": output_logprobs,
+    }
+
+
+async def _collect_stream(stream):
+    """Collect all events from an async iterable."""
+    return [event async for event in stream]
+
+
+class TestRoutedExpertsE2E:
+    """End-to-end tests for routing replay through SGLangModel.stream()."""
+
+    @pytest.fixture
+    def mock_tokenizer(self):
+        tokenizer = MagicMock()
+        tokenizer.apply_chat_template.return_value = "formatted prompt"
+        tokenizer.encode.return_value = [10, 20, 30]
+        return tokenizer
+
+    @pytest.fixture
+    def model(self, mock_tokenizer):
+        client = SGLangClient(base_url="http://localhost:30000")
+        return SGLangModel(client=client, tokenizer=mock_tokenizer, return_routed_experts=True)
+
+    async def test_single_turn_routing(self, model):
+        """Single turn: routing is sliced into prompt + response segments."""
+        prompt_tokens = [10, 20, 30]  # 3 tokens
+        output_ids = [40, 50]  # 2 tokens
+
+        response = _make_generate_response(
+            text="Hello!",
+            output_ids=output_ids,
+            num_input_tokens=len(prompt_tokens),
+            include_routing=True,
+        )
+
+        with patch.object(model.client, "generate", new_callable=AsyncMock, return_value=response):
+            await _collect_stream(model.stream([{"role": "user", "content": [{"text": "Hi"}]}]))
+
+        assert model.token_manager.token_ids == prompt_tokens + output_ids
+
+        # Routing covers all 5 tokens, sliced into 2 segments
+        routing = model.token_manager.routed_experts
+        assert routing is not None
+        decoded = _decode_routing_b64(routing)
+        assert len(decoded) == 5 * EXPERTS_PER_TOKEN
+
+        for pos in range(5):
+            chunk = decoded[pos * EXPERTS_PER_TOKEN : (pos + 1) * EXPERTS_PER_TOKEN]
+            assert chunk == [pos * 10 + k for k in range(EXPERTS_PER_TOKEN)]
+
+    async def test_multi_turn_with_tool_call(self, model, mock_tokenizer):
+        """Multi-turn: full blob is sliced per-segment across turns.
+
+        Turn 2 returns routing for the FULL sequence; SGLangModel slices out
+        only the new tokens (tool result + response) and appends them.
+        """
+        # --- Turn 1: user prompt -> model generates tool call ---
+        prompt_tokens_t1 = [10, 20, 30]
+        output_ids_t1 = [40, 50]
+        mock_tokenizer.encode.return_value = prompt_tokens_t1
+
+        response_t1 = _make_generate_response(
+            text='<tool_call>{"name": "calc", "arguments": {"expr": "1+1"}}</tool_call>',
+            output_ids=output_ids_t1,
+            num_input_tokens=len(prompt_tokens_t1),
+            include_routing=True,
+        )
+
+        with patch.object(model.client, "generate", new_callable=AsyncMock, return_value=response_t1):
+            messages_t1 = [{"role": "user", "content": [{"text": "What is 1+1?"}]}]
+            await _collect_stream(model.stream(messages_t1, tool_specs=[{"name": "calc", "description": "calc"}]))
+
+        total_after_t1 = len(model.token_manager)  # 5
+
+        # --- Turn 2: tool result -> model generates final answer ---
+        # SGLang returns routing for ALL 10 tokens (full sequence)
+        tool_result_tokens = [60, 70]
+        output_ids_t2 = [80, 90, 100]
+        mock_tokenizer.encode.return_value = tool_result_tokens
+
+        response_t2 = _make_generate_response(
+            text="The answer is 2.",
+            output_ids=output_ids_t2,
+            num_input_tokens=total_after_t1 + len(tool_result_tokens),
+            include_routing=True,  # full sequence routing (positions 0-9)
+        )
+
+        with patch.object(model.client, "generate", new_callable=AsyncMock, return_value=response_t2):
+            messages_t2 = messages_t1 + [
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"text": '<tool_call>{"name": "calc", "arguments": {"expr": "1+1"}}</tool_call>'},
+                        {"toolUse": {"toolUseId": "call_0000", "name": "calc", "input": {"expr": "1+1"}}},
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"toolResult": {"toolUseId": "call_0000", "content": [{"text": "2"}]}},
+                    ],
+                },
+            ]
+            await _collect_stream(model.stream(messages_t2, tool_specs=[{"name": "calc", "description": "calc"}]))
+
+        # Full token trajectory: 4 segments
+        expected_ids = prompt_tokens_t1 + output_ids_t1 + tool_result_tokens + output_ids_t2
+        assert model.token_manager.token_ids == expected_ids
+        total_tokens = len(expected_ids)  # 10
+
+        # Routing covers ALL tokens across both turns (sliced per-segment)
+        routing = model.token_manager.routed_experts
+        assert routing is not None
+        decoded = _decode_routing_b64(routing)
+        assert len(decoded) == total_tokens * EXPERTS_PER_TOKEN
+
+        # Verify per-token expert IDs are correct and contiguous
+        for pos in range(total_tokens):
+            chunk = decoded[pos * EXPERTS_PER_TOKEN : (pos + 1) * EXPERTS_PER_TOKEN]
+            assert chunk == [pos * 10 + k for k in range(EXPERTS_PER_TOKEN)]
+
+    async def test_routing_aligns_with_loss_mask(self, model, mock_tokenizer):
+        """Routing entries align 1:1 with token_ids and loss_mask."""
+        mock_tokenizer.encode.return_value = [10, 20, 30]
+
+        response = _make_generate_response(
+            text="answer",
+            output_ids=[40, 50],
+            num_input_tokens=3,
+            include_routing=True,
+        )
+
+        with patch.object(model.client, "generate", new_callable=AsyncMock, return_value=response):
+            await _collect_stream(model.stream([{"role": "user", "content": [{"text": "Hi"}]}]))
+
+        n_tokens = len(model.token_manager.token_ids)
+        routing_entries = len(_decode_routing_b64(model.token_manager.routed_experts)) // EXPERTS_PER_TOKEN
+
+        assert routing_entries == n_tokens
+        assert len(model.token_manager.loss_mask) == n_tokens
+        assert len(model.token_manager.logprobs) == n_tokens
+
+    async def test_routing_disabled_by_default(self, mock_tokenizer):
+        """When return_routed_experts is not set, no routing data is recorded."""
+        client = SGLangClient(base_url="http://localhost:30000")
+        model = SGLangModel(client=client, tokenizer=mock_tokenizer)
+
+        mock_tokenizer.encode.return_value = [10, 20]
+        response = _make_generate_response(text="hi", output_ids=[30], num_input_tokens=2)
+
+        with patch.object(model.client, "generate", new_callable=AsyncMock, return_value=response) as mock_gen:
+            await _collect_stream(model.stream([{"role": "user", "content": [{"text": "Hi"}]}]))
+            assert mock_gen.call_args.kwargs["return_routed_experts"] is False
+
+        assert model.token_manager.routed_experts is None
+
+    async def test_routing_absent_from_response(self, model, mock_tokenizer):
+        """If server doesn't return routing data, routed_experts stays None."""
+        mock_tokenizer.encode.return_value = [10, 20]
+        response = _make_generate_response(text="hi", output_ids=[30], num_input_tokens=2)
+
+        with patch.object(model.client, "generate", new_callable=AsyncMock, return_value=response):
+            await _collect_stream(model.stream([{"role": "user", "content": [{"text": "Hi"}]}]))
+
+        assert model.token_manager.routed_experts is None
+
+    async def test_reset_clears_routing(self, model, mock_tokenizer):
+        """model.reset() clears accumulated routing data."""
+        mock_tokenizer.encode.return_value = [10, 20]
+        response = _make_generate_response(text="hi", output_ids=[30], num_input_tokens=2, include_routing=True)
+
+        with patch.object(model.client, "generate", new_callable=AsyncMock, return_value=response):
+            await _collect_stream(model.stream([{"role": "user", "content": [{"text": "Hi"}]}]))
+
+        assert model.token_manager.routed_experts is not None
+        model.reset()
+        assert model.token_manager.routed_experts is None

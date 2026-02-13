@@ -27,6 +27,7 @@ throughout the rollout instead of converting text back to tokens.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from typing import (
@@ -87,6 +88,7 @@ class SGLangModel(Model):
         sampling_params: dict[str, Any] | None  # Passed to /generate endpoint
         return_logprob: bool | None  # Return logprobs for all tokens (default: True)
         enable_thinking: bool | None  # Enable thinking mode for Qwen3 hybrid models
+        return_routed_experts: bool | None  # Record MoE routing decisions for routing replay
 
     def __init__(
         self,
@@ -344,6 +346,7 @@ class SGLangModel(Model):
         config = self.get_config()
         sampling_params: dict[str, Any] = dict(config.get("sampling_params") or {})
         return_logprob = config.get("return_logprob", True)
+        return_routed_experts = config.get("return_routed_experts", False)
         new_input_tokens = self.tokenize_prompt_messages(messages, system_prompt)
         # Tracking token IDs in token_manager to ensure the token-in feature
         input_ids = self.token_manager.token_ids + (new_input_tokens or [])
@@ -359,6 +362,7 @@ class SGLangModel(Model):
                 sampling_params=sampling_params,
                 return_logprob=return_logprob,
                 logprob_start_len=0 if return_logprob else None,
+                return_routed_experts=return_routed_experts,
             )
 
             # Extract response data
@@ -377,12 +381,31 @@ class SGLangModel(Model):
         except SGLangThrottledError as e:
             raise ModelThrottledException(f"Service throttled (status={e.status}): {e.body}") from e
 
+        # Slice routed experts per-segment (SGLang returns routing for the full sequence)
+        prompt_routing = None
+        response_routing = None
+        routed_experts_data = meta_info.get("routed_experts") if return_routed_experts else None
+        if routed_experts_data and (new_input_tokens or output_ids):
+            raw = base64.b64decode(routed_experts_data)
+            total_seq_len = len(input_ids) + len(output_ids)
+            bpt = len(raw) // total_seq_len if total_seq_len else 0
+            if bpt:
+                input_end = len(input_ids) * bpt
+                if new_input_tokens:
+                    prompt_routing = raw[input_end - len(new_input_tokens) * bpt : input_end]
+                if output_ids:
+                    response_routing = raw[input_end:]
+
         # Update token trajectory
         if new_input_tokens:
             new_input_logprobs = input_logprobs[-len(new_input_tokens) :] if input_logprobs else None
-            self.token_manager.add_prompt(token_ids=new_input_tokens, logprobs=new_input_logprobs)
+            self.token_manager.add_prompt(
+                token_ids=new_input_tokens, logprobs=new_input_logprobs, routed_experts=prompt_routing
+            )
         if output_ids:
-            self.token_manager.add_response(token_ids=output_ids, logprobs=output_logprobs)
+            self.token_manager.add_response(
+                token_ids=output_ids, logprobs=output_logprobs, routed_experts=response_routing
+            )
         self._processed_message_count = len(messages) + 1
 
         # End text block, start tool use blocks if there are any tool calls

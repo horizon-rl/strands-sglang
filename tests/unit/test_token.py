@@ -14,6 +14,9 @@
 
 """Unit tests for token module."""
 
+import base64
+import struct
+
 import pytest
 
 from strands_sglang import Token, TokenManager
@@ -255,6 +258,15 @@ class TestTokenManagerReset:
         assert manager.tokens == []
         assert manager.segments == []
 
+    def test_reset_clears_routed_experts(self):
+        """reset clears accumulated routed experts."""
+        manager = TokenManager()
+        manager.add_prompt([1], routed_experts=b"\x01\x00\x00\x00")
+
+        manager.reset()
+
+        assert manager.routed_experts is None
+
     def test_reset_allows_reuse(self):
         """Manager can be reused after reset."""
         manager = TokenManager()
@@ -332,3 +344,72 @@ class TestEdgeCases:
         manager = TokenManager()
         manager.add_prompt([100000, 999999])
         assert manager.token_ids == [100000, 999999]
+
+
+def _make_routing_bytes(expert_ids: list[int]) -> bytes:
+    """Helper: encode a list of int32 expert IDs to raw bytes (matching SGLang format)."""
+    return struct.pack(f"<{len(expert_ids)}i", *expert_ids)
+
+
+def _decode_routing_b64(data: str) -> list[int]:
+    """Helper: decode base64 routing data back to int32 expert IDs."""
+    raw = base64.b64decode(data)
+    return list(struct.unpack(f"<{len(raw) // 4}i", raw))
+
+
+class TestRoutedExperts:
+    """Tests for routed experts accumulation (aligned with segments)."""
+
+    def test_empty_manager_returns_none(self):
+        """No routing data returns None."""
+        manager = TokenManager()
+        assert manager.routed_experts is None
+
+    def test_single_segment(self):
+        """Routing bytes on a prompt segment round-trip through base64."""
+        manager = TokenManager()
+        experts = [0, 1, 2, 3]
+        manager.add_prompt([10, 20], routed_experts=_make_routing_bytes(experts))
+
+        result = manager.routed_experts
+        assert result is not None
+        assert _decode_routing_b64(result) == experts
+
+    def test_segments_without_routing(self):
+        """Segments added without routing produce None."""
+        manager = TokenManager()
+        manager.add_prompt([1, 2])
+        manager.add_response([3, 4])
+        assert manager.routed_experts is None
+
+    def test_multi_turn_accumulation(self):
+        """Routing bytes from multiple segments are concatenated in order."""
+        manager = TokenManager()
+
+        prompt_experts = [10, 20, 30, 40, 50, 60]  # 3 tokens
+        response_experts = [70, 80, 90, 100]  # 2 tokens
+        tool_experts = [110, 120]  # 1 token
+        final_experts = [130, 140, 150, 160]  # 2 tokens
+
+        manager.add_prompt([1, 2, 3], routed_experts=_make_routing_bytes(prompt_experts))
+        manager.add_response([4, 5], routed_experts=_make_routing_bytes(response_experts))
+        manager.add_prompt([6], routed_experts=_make_routing_bytes(tool_experts))
+        manager.add_response([7, 8], routed_experts=_make_routing_bytes(final_experts))
+
+        result = manager.routed_experts
+        assert result is not None
+        expected = prompt_experts + response_experts + tool_experts + final_experts
+        assert _decode_routing_b64(result) == expected
+
+    def test_reset_then_reuse(self):
+        """Routing data can be accumulated after reset."""
+        manager = TokenManager()
+        manager.add_prompt([1], routed_experts=_make_routing_bytes([1, 2]))
+        manager.reset()
+
+        new_experts = [5, 6, 7]
+        manager.add_prompt([10, 20], routed_experts=_make_routing_bytes(new_experts))
+
+        result = manager.routed_experts
+        assert result is not None
+        assert _decode_routing_b64(result) == new_experts

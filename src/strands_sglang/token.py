@@ -22,10 +22,12 @@ For RL training, you typically want:
 - token_ids: Flat list of all tokens for the trajectory
 - loss_mask: Integer mask for loss computation (1 = model output, 0 = prompt/tool)
 - logprobs: Log probabilities for policy gradient
+- routed_experts: Base64-encoded MoE routing decisions for routing replay
 """
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 
 
@@ -74,17 +76,22 @@ class TokenManager:
     def __init__(self) -> None:
         """Create a TokenManager."""
         self._segments: list[list[Token]] = []
+        self._routed_expert_segments: list[bytes] = []
 
     def reset(self) -> None:
         """Reset token accumulation for a new episode."""
         self._segments = []
+        self._routed_expert_segments = []
 
-    def add_prompt(self, token_ids: list[int], logprobs: list[float] | None = None) -> None:
+    def add_prompt(
+        self, token_ids: list[int], logprobs: list[float] | None = None, routed_experts: bytes | None = None
+    ) -> None:
         """Add a prompt segment (system messages, user input, tool results).
 
         Args:
             token_ids: Token IDs for this segment.
             logprobs: Optional log probabilities (from forward pass).
+            routed_experts: Optional raw routing bytes for these tokens.
         """
         if not token_ids:
             return
@@ -98,13 +105,18 @@ class TokenManager:
             for i, tid in enumerate(token_ids)
         ]
         self._segments.append(tokens)
+        if routed_experts is not None:
+            self._routed_expert_segments.append(routed_experts)
 
-    def add_response(self, token_ids: list[int], logprobs: list[float] | None = None) -> None:
+    def add_response(
+        self, token_ids: list[int], logprobs: list[float] | None = None, routed_experts: bytes | None = None
+    ) -> None:
         """Add a response segment (model output).
 
         Args:
             token_ids: Token IDs for this segment.
             logprobs: Optional log probabilities for each token.
+            routed_experts: Optional raw routing bytes for these tokens.
 
         Raises:
             RuntimeError: If no prompt segment has been added yet.
@@ -123,6 +135,25 @@ class TokenManager:
             for i, tid in enumerate(token_ids)
         ]
         self._segments.append(tokens)
+        if routed_experts is not None:
+            self._routed_expert_segments.append(routed_experts)
+
+    @property
+    def routed_experts(self) -> str | None:
+        """Get accumulated routed experts as a base64-encoded string.
+
+        Each segment's routing bytes are concatenated and re-encoded as a
+        single base64 string matching the format returned by SGLang's
+        ``/generate`` endpoint.
+
+        Returns:
+            Base64-encoded string of int32 expert IDs with logical shape
+            ``[total_tokens, num_layers, top_k]``, or ``None`` if no routing
+            data has been recorded.
+        """
+        if not self._routed_expert_segments:
+            return None
+        return base64.b64encode(b"".join(self._routed_expert_segments)).decode("ascii")
 
     @property
     def tokens(self) -> list[Token]:
