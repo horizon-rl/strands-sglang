@@ -3,6 +3,7 @@
 [![CI](https://github.com/horizon-rl/strands-sglang/actions/workflows/test.yml/badge.svg)](https://github.com/horizon-rl/strands-sglang/actions/workflows/test.yml)
 [![PyPI](https://img.shields.io/pypi/v/strands-sglang.svg)](https://pypi.org/project/strands-sglang/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/horizon-rl/strands-sglang)
 
 SGLang model provider for [Strands Agents SDK](https://github.com/strands-agents/sdk-python) with Token-in/Token-out rollouts for on-policy agentic RL training (no retokenization drift) [[Blog](https://splendid-farmer-2d0.notion.site/Bridging-Agent-Scaffolding-and-RL-Training-with-Strands-SGLang-2e655dc580e680e28c78f6d743ab987f)].
 
