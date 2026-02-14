@@ -81,7 +81,7 @@ For RL training with [slime](https://github.com/THUDM/slime/), `SGLangModel` eli
 
 ```python
 from strands import Agent, tool
-from strands_sglang import SGLangClient, SGLangModel, ToolIterationLimiter
+from strands_sglang import SGLangClient, SGLangModel, ToolLimiter
 from slime.utils.types import Sample
 
 SYSTEM_PROMPT = "..."
@@ -98,13 +98,13 @@ async def generate(args, sample: Sample, sampling_params) -> Sample:
 
     state = GenerateState(args)
 
-    # Set up Agent with SGLangModel and ToolIterationLimiter hook
+    # Set up Agent with SGLangModel and ToolLimiter hook
     model = SGLangModel(
         client=get_client(args),
         tokenizer=state.tokenizer,
         sampling_params={k: sampling_params[k] for k in ["max_new_tokens", "temperature", "top_p"]},
     )
-    limiter = ToolIterationLimiter(max_iterations=MAX_TOOL_ITERATIONS)
+    limiter = ToolLimiter(max_tool_iters=MAX_TOOL_ITERATIONS)
     agent = Agent(
         model=model,
         tools=[execute_python_code],

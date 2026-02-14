@@ -53,7 +53,7 @@ The package lives in `src/strands_sglang/` with 6 core modules:
 
 **ToolParser** (`tool_parsers/`) - Abstract base with `HermesToolParser` and `QwenXMLToolParser` implementations. Parses tool calls from model output. Strict parsing: only catches JSONDecodeError, propagates failures as tool calls with `raw` content for model feedback. Excludes tool calls inside `<think>` blocks. New parsers self-register via `@register_tool_parser` decorator.
 
-**ToolIterationLimiter** (`tool_limiter.py`) - Strands hook enforcing max tool iterations per invocation. One iteration = model response with tool calls + execution + result returned. Raises `MaxToolIterationsReachedError`.
+**ToolLimiter** (`tool_limiter.py`) - Strands hook enforcing tool iteration and/or call limits per invocation. Supports `max_tool_iters` (one iteration = model response with tool calls + execution) and `max_tool_calls` (individual call count). Raises `MaxToolIterationsReachedError` or `MaxToolCallsReachedError`.
 
 ### Key Design Decisions
 

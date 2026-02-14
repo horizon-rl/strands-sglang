@@ -23,7 +23,7 @@ from .exceptions import (
 )
 from .sglang import SGLangModel
 from .token import Token, TokenManager
-from .tool_limiter import MaxToolIterationsReachedError, ToolIterationLimiter
+from .tool_limiter import MaxToolCallsReachedError, MaxToolIterationsReachedError, ToolLimiter
 from .tool_parsers import get_tool_parser
 
 __all__ = [
@@ -44,6 +44,7 @@ __all__ = [
     # Tool parsing
     "get_tool_parser",
     # Hooks
-    "ToolIterationLimiter",
+    "ToolLimiter",
     "MaxToolIterationsReachedError",
+    "MaxToolCallsReachedError",
 ]
