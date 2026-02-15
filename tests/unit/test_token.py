@@ -112,12 +112,11 @@ class TestTokenManagerAddPrompt:
         assert len(manager) == 0
         assert manager.segments == []
 
-    def test_add_prompt_partial_logprobs(self):
-        """add_prompt handles partial logprobs gracefully."""
+    def test_add_prompt_mismatched_logprobs_raises(self):
+        """add_prompt raises ValueError if logprobs length doesn't match token_ids."""
         manager = TokenManager()
-        manager.add_prompt([1, 2, 3], logprobs=[-0.1])
-
-        assert manager.logprobs == [-0.1, None, None]
+        with pytest.raises(ValueError, match="logprobs length"):
+            manager.add_prompt([1, 2, 3], logprobs=[-0.1])
 
 
 class TestTokenManagerAddResponse:
@@ -152,13 +151,12 @@ class TestTokenManagerAddResponse:
         with pytest.raises(RuntimeError, match="First segment must be a prompt"):
             manager.add_response([4, 5, 6])
 
-    def test_add_response_partial_logprobs(self):
-        """add_response handles partial logprobs gracefully."""
+    def test_add_response_mismatched_logprobs_raises(self):
+        """add_response raises ValueError if logprobs length doesn't match token_ids."""
         manager = TokenManager()
         manager.add_prompt([0])
-        manager.add_response([1, 2, 3], logprobs=[-0.1, -0.2])
-
-        assert manager.logprobs[1:] == [-0.1, -0.2, None]
+        with pytest.raises(ValueError, match="logprobs length"):
+            manager.add_response([1, 2, 3], logprobs=[-0.1, -0.2])
 
 
 class TestTokenManagerMultipleSegments:
@@ -306,13 +304,11 @@ class TestEdgeCases:
         assert manager.token_ids == [1, 2, 3]
         assert manager.loss_mask == [False, True, False]
 
-    def test_logprobs_longer_than_tokens(self):
-        """Extra logprobs are ignored (only uses indices up to token count)."""
+    def test_logprobs_longer_than_tokens_raises(self):
+        """Extra logprobs raise ValueError."""
         manager = TokenManager()
-        manager.add_prompt([1, 2], logprobs=[-0.1, -0.2, -0.3, -0.4])
-
-        # Only first 2 logprobs used
-        assert manager.logprobs == [-0.1, -0.2]
+        with pytest.raises(ValueError, match="logprobs length"):
+            manager.add_prompt([1, 2], logprobs=[-0.1, -0.2, -0.3, -0.4])
 
     def test_zero_logprob(self):
         """Zero logprob is valid and preserved."""

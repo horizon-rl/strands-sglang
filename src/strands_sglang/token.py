@@ -88,11 +88,13 @@ class TokenManager:
         """
         if not token_ids:
             return
+        if logprobs is not None and len(logprobs) != len(token_ids):
+            raise ValueError(f"logprobs length ({len(logprobs)}) must match token_ids length ({len(token_ids)})")
 
         tokens = [
             Token(
                 token_id=tid,
-                logprob=logprobs[i] if logprobs and i < len(logprobs) else None,
+                logprob=logprobs[i] if logprobs is not None else None,
                 loss_mask=False,
             )
             for i, tid in enumerate(token_ids)
@@ -108,16 +110,19 @@ class TokenManager:
 
         Raises:
             RuntimeError: If no prompt segment has been added yet.
+            ValueError: If logprobs length doesn't match token_ids length.
         """
         if not token_ids:
             return
         if not self._segments:
             raise RuntimeError("First segment must be a prompt. Call add_prompt() before add_response().")
+        if logprobs is not None and len(logprobs) != len(token_ids):
+            raise ValueError(f"logprobs length ({len(logprobs)}) must match token_ids length ({len(token_ids)})")
 
         tokens = [
             Token(
                 token_id=tid,
-                logprob=logprobs[i] if logprobs and i < len(logprobs) else None,
+                logprob=logprobs[i] if logprobs is not None else None,
                 loss_mask=True,
             )
             for i, tid in enumerate(token_ids)
