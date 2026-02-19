@@ -97,8 +97,6 @@ class ToolLimiter(HookProvider):
         - Counts on assistant messages with toolUse (model requesting tools)
         - Raises on user messages with toolResult (iteration complete)
         """
-        if self.max_tool_iters is None and self.max_tool_calls is None:
-            return
 
         message = event.message
         content = message.get("content", [])
