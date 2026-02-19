@@ -122,12 +122,11 @@ class TestMaxToolIters:
         assert limiter.tool_iter_count == 1
 
     def test_none_means_no_limit(self):
-        """max_tool_iters=None (with max_tool_calls also None) never raises."""
+        """max_tool_iters=None (with max_tool_calls also None) never raises but still counts."""
         limiter = ToolLimiter(max_tool_iters=None)
         for _ in range(100):
             _simulate_iteration(limiter)
-        # Both limits None -> early return, counters not updated
-        assert limiter.tool_iter_count == 0
+        assert limiter.tool_iter_count == 100
 
 
 # =============================================================================
@@ -165,12 +164,11 @@ class TestMaxToolCalls:
         assert limiter.tool_call_count == 5
 
     def test_none_means_no_limit(self):
-        """max_tool_calls=None (with max_tool_iters also None) never raises."""
+        """max_tool_calls=None (with max_tool_iters also None) never raises but still counts."""
         limiter = ToolLimiter(max_tool_calls=None)
         for _ in range(50):
             _simulate_iteration(limiter, parallel_calls=3)
-        # Both limits None -> early return, counters not updated
-        assert limiter.tool_call_count == 0
+        assert limiter.tool_call_count == 150
 
     def test_zero_stops_after_first_call(self):
         """max_tool_calls=0 raises on first tool result."""
@@ -238,12 +236,12 @@ class TestBothLimits:
 
 class TestNoLimits:
     def test_both_none_never_raises(self):
+        """Both limits None: never raises, but counters are still accurate."""
         limiter = ToolLimiter()
         for _ in range(100):
             _simulate_iteration(limiter, parallel_calls=3)
-        # Counters are NOT updated when both limits are None (early return)
-        assert limiter.tool_iter_count == 0
-        assert limiter.tool_call_count == 0
+        assert limiter.tool_iter_count == 100
+        assert limiter.tool_call_count == 300
 
 
 # =============================================================================
