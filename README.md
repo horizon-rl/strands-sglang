@@ -83,41 +83,55 @@ asyncio.run(main())
 For RL training with [slime](https://github.com/THUDM/slime/), `SGLangModel` eliminates the retokenization step, see an concrete example at [slime/examples/strands_sglang](https://github.com/THUDM/slime/tree/main/examples/strands_sglang):
 
 ```python
+import logging
 from strands import Agent, tool
 from strands_sglang import SGLangClient, SGLangModel, ToolLimiter
+from strands_sglang.tool_parsers import HermesToolParser
+from slime.rollout.sglang_rollout import GenerateState
 from slime.utils.types import Sample
 
 SYSTEM_PROMPT = "..."
-MAX_TOOL_ITERATIONS= ... # e.g., 5
+MAX_TOOL_ITERS = 5
+MAX_TOOL_CALLS = None  # No limit
+
+_client_cache: dict[str, SGLangClient] = {}
+
+def get_client(args) -> SGLangClient:
+    """Get shared client for connection pooling."""
+    base_url = f"http://{args.sglang_router_ip}:{args.sglang_router_port}"
+    if base_url not in _client_cache:
+        _client_cache[base_url] = SGLangClient.from_slime_args(args, timeout=300.0)
+    return _client_cache[base_url]
 
 @tool
 def execute_python_code(code: str):
     """Execute Python code and return the output."""
     ...
 
+
 async def generate(args, sample: Sample, sampling_params) -> Sample:
-    """Customize slime's rollout function using `SGLangModel`"""
+    """Generate with tokens captured during generation, no retokenization."""
     assert not args.partial_rollout, "Partial rollout not supported."
 
     state = GenerateState(args)
-
-    # Set up Agent with SGLangModel and ToolLimiter hook
     model = SGLangModel(
-        client=get_client(args),
         tokenizer=state.tokenizer,
-        sampling_params={k: sampling_params[k] for k in ["max_new_tokens", "temperature", "top_p"]},
+        client=get_client(args),
+        tool_parser=HermesToolParser(),  # tool parsing for wrapped JSON tool calls
+        sampling_params=sampling_params,
     )
-    limiter = ToolLimiter(max_tool_iters=MAX_TOOL_ITERATIONS)
+
+    tool_limiter = ToolLimiter(max_tool_iters=MAX_TOOL_ITERS, max_tool_calls=MAX_TOOL_CALLS)
     agent = Agent(
         model=model,
         tools=[execute_python_code],
-        hooks=[limiter],
+        hooks=[tool_limiter],
         callback_handler=None,
         system_prompt=SYSTEM_PROMPT,
     )
 
-    # Run Agent Loop
     prompt = sample.prompt if isinstance(sample.prompt, str) else sample.prompt[0]["content"]
+
     try:
         await agent.invoke_async(prompt)
         sample.status = Sample.Status.COMPLETED
@@ -136,7 +150,11 @@ async def generate(args, sample: Sample, sampling_params) -> Sample:
     sample.response_length = len(sample.tokens) - prompt_len
     sample.response = model.tokenizer.decode(sample.tokens[prompt_len:], skip_special_tokens=False)
 
-    # Cleanup and return
+    # Record tool call stats for reward computation if needed
+    # Multiple parallel tool calls count as one tool_iter
+    sample.tool_iters = tool_limiter.tool_iter_count
+    sample.tool_calls = tool_limiter.tool_call_count
+
     model.reset()
     agent.cleanup()
     return sample
