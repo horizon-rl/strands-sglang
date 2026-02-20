@@ -8,7 +8,7 @@ version = "0.2.5.dev0"
 description = "SGLang model provider for Strands Agents SDK with Token-in/Token-out support for agentic RL training."
 readme = "README.md"
 requires-python = ">=3.10"
-license = "Apache-2.0"
+license = {text = "Apache-2.0"}
 authors = [
     { name = "Yuan He", email = "yuanhe.cs.ai@gmail.com" }
 ]
