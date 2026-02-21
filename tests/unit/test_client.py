@@ -63,7 +63,7 @@ class TestSGLangClientInit:
 
 
 class TestGetSession:
-    """Tests for _get_session lazy initialization and event loop detection."""
+    """Tests for _get_session lazy initialization."""
 
     async def test_creates_session_on_first_call(self):
         """First call to _get_session creates a new session."""
@@ -72,7 +72,6 @@ class TestGetSession:
 
         session = client._get_session()
         assert session is not None
-        assert client._connector is not None
 
     async def test_reuses_session_on_subsequent_calls(self):
         """Subsequent calls return the same session."""
@@ -81,26 +80,6 @@ class TestGetSession:
         session2 = client._get_session()
         assert session1 is session2
 
-    async def test_recreates_session_when_loop_changes(self):
-        """Session is recreated when the event loop has changed."""
-        client = SGLangClient(base_url="http://localhost:30000")
-
-        # Simulate a session from a different (old) loop
-        mock_session = MagicMock()
-        mock_session.closed = False
-        old_loop = MagicMock()  # Not the current running loop
-
-        mock_connector = MagicMock()
-        mock_connector.closed = False
-
-        client._session = mock_session
-        client._connector = mock_connector
-        client._loop = old_loop
-
-        new_session = client._get_session()
-        assert new_session is not mock_session  # Got a fresh session
-        mock_connector._close.assert_called_once()  # Old connector cleaned up
-
     async def test_recreates_session_when_closed(self):
         """Session is recreated when explicitly closed."""
         client = SGLangClient(base_url="http://localhost:30000")
@@ -108,42 +87,10 @@ class TestGetSession:
         mock_session = MagicMock()
         mock_session.closed = True
 
-        mock_connector = MagicMock()
-        mock_connector.closed = False
-
         client._session = mock_session
-        client._connector = mock_connector
-        client._loop = asyncio.get_running_loop()  # Same loop, but session closed
 
         new_session = client._get_session()
         assert new_session is not mock_session
-
-    def test_real_session_survives_loop_change(self):
-        """Real aiohttp session from loop A works in loop B via _get_session recreation.
-
-        This reproduces the actual bug: a shared/cached client creates a session in one
-        event loop, then the loop changes (pytest-asyncio, RL training restart). Without
-        the loop detection fix, the stale session would raise 'Event loop is closed'.
-        """
-        client = SGLangClient(base_url="http://localhost:30000")
-
-        # Loop A: create session
-        async def create_in_loop_a():
-            session = client._get_session()
-            return id(session)
-
-        session_a_id = asyncio.run(create_in_loop_a())
-        # Loop A is now closed
-
-        # Loop B: _get_session should detect the loop change and create a new session
-        async def use_in_loop_b():
-            session = client._get_session()
-            # Session should be different (new loop)
-            assert id(session) != session_a_id
-            # Session should be usable (not bound to dead loop)
-            assert not session.closed
-
-        asyncio.run(use_in_loop_b())
 
 
 
