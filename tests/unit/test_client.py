@@ -146,50 +146,6 @@ class TestGetSession:
         asyncio.run(use_in_loop_b())
 
 
-class TestFromSlimeArgs:
-    """Tests for SGLangClient.from_slime_args factory method."""
-
-    def test_builds_url_from_router_ip_port(self):
-        """from_slime_args builds URL from router_ip and router_port."""
-        args = MagicMock()
-        args.sglang_router_ip = "10.0.0.1"
-        args.sglang_router_port = 9000
-        args.sglang_server_concurrency = 256
-        args.rollout_num_gpus = 8
-        args.rollout_num_gpus_per_engine = 1
-
-        client = SGLangClient.from_slime_args(args)
-
-        assert client.base_url == "http://10.0.0.1:9000"
-
-    def test_computes_max_connections(self):
-        """from_slime_args uses Slime's formula: concurrency * num_gpus // gpus_per_engine."""
-        args = MagicMock()
-        args.sglang_router_ip = "localhost"
-        args.sglang_router_port = 30000
-        args.sglang_server_concurrency = 256
-        args.rollout_num_gpus = 8
-        args.rollout_num_gpus_per_engine = 2
-
-        # max_connections = 256 * 8 // 2 = 1024
-        client = SGLangClient.from_slime_args(args)
-
-        assert client.base_url == "http://localhost:30000"
-
-    def test_with_overrides(self):
-        """from_slime_args allows overriding configuration."""
-        args = MagicMock()
-        args.sglang_router_ip = "localhost"
-        args.sglang_router_port = 30000
-        args.sglang_server_concurrency = 256
-        args.rollout_num_gpus = 8
-        args.rollout_num_gpus_per_engine = 1
-
-        client = SGLangClient.from_slime_args(args, max_retries=100, retry_delay=2.0)
-
-        assert client.max_retries == 100
-        assert client.retry_delay == 2.0
-
 
 class TestClassifyHTTPError:
     """Tests for _classify_http_error static method."""

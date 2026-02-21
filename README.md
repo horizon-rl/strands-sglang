@@ -85,7 +85,7 @@ For RL training with [slime](https://github.com/THUDM/slime/), `SGLangModel` eli
 ```python
 import logging
 from strands import Agent, tool
-from strands_sglang import SGLangClient, SGLangModel, ToolLimiter
+from strands_sglang import SGLangModel, ToolLimiter, get_client_from_slime_args
 from strands_sglang.tool_parsers import HermesToolParser
 from slime.rollout.sglang_rollout import GenerateState
 from slime.utils.types import Sample
@@ -94,14 +94,6 @@ SYSTEM_PROMPT = "..."
 MAX_TOOL_ITERS = 5
 MAX_TOOL_CALLS = None  # No limit
 
-_client_cache: dict[str, SGLangClient] = {}
-
-def get_client(args) -> SGLangClient:
-    """Get shared client for connection pooling."""
-    base_url = f"http://{args.sglang_router_ip}:{args.sglang_router_port}"
-    if base_url not in _client_cache:
-        _client_cache[base_url] = SGLangClient.from_slime_args(args, timeout=300.0)
-    return _client_cache[base_url]
 
 @tool
 def execute_python_code(code: str):
@@ -116,7 +108,7 @@ async def generate(args, sample: Sample, sampling_params) -> Sample:
     state = GenerateState(args)
     model = SGLangModel(
         tokenizer=state.tokenizer,
-        client=get_client(args),
+        client=get_client_from_slime_args(args),  # this is lru-cached client
         tool_parser=HermesToolParser(),  # tool parsing for wrapped JSON tool calls
         sampling_params=sampling_params,
     )
