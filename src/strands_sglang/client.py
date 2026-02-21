@@ -109,9 +109,10 @@ class SGLangClient:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
-        # Store config for lazy session creation (avoids aiohttp warning about creating session outside event loop)
+        # Store config for lazy session creation (connector has event loop affinity)
         self._max_connections = max_connections
-        self._timeout = aiohttp.ClientTimeout(total=timeout, connect=connect_timeout)
+        self._timeout = timeout
+        self._connect_timeout = connect_timeout
         self._session: aiohttp.ClientSession | None = None
 
         logger.info(
@@ -125,7 +126,7 @@ class SGLangClient:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 base_url=self.base_url,
-                timeout=self._timeout,
+                timeout=aiohttp.ClientTimeout(total=self._timeout, connect=self._connect_timeout),
                 connector=aiohttp.TCPConnector(limit=self._max_connections),
             )
         return self._session
