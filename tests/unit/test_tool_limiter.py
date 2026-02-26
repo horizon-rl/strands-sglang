@@ -7,7 +7,7 @@ without needing a real agent or server.
 from unittest.mock import Mock
 
 import pytest
-from strands.hooks.events import MessageAddedEvent
+from strands.hooks.events import BeforeToolCallEvent, MessageAddedEvent
 
 from strands_sglang.tool_limiter import MaxToolCallsReachedError, MaxToolIterationsReachedError, ToolLimiter
 
@@ -40,6 +40,16 @@ def _assistant_text_only() -> MessageAddedEvent:
 def _user_text_only() -> MessageAddedEvent:
     """Create a user message with only text (no tool result)."""
     return MessageAddedEvent(agent=_MOCK_AGENT, message={"role": "user", "content": [{"text": "Hi"}]})
+
+
+def _before_tool_call(tool_id: str = "tool-0") -> BeforeToolCallEvent:
+    """Create a BeforeToolCallEvent for testing."""
+    return BeforeToolCallEvent(
+        agent=_MOCK_AGENT,
+        selected_tool=None,
+        tool_use={"toolUseId": tool_id, "name": "calc", "input": {}},
+        invocation_state={},
+    )
 
 
 def _simulate_iteration(limiter: ToolLimiter, parallel_calls: int = 1) -> None:
@@ -293,3 +303,136 @@ class TestIgnoredMessages:
         limiter._on_message_added(event)
         assert limiter.tool_iter_count == 1
         assert limiter.tool_call_count == 1
+
+
+# =============================================================================
+# max_tool_calls_per_turn
+# =============================================================================
+
+
+class TestMaxToolCallsPerTurn:
+    def test_first_n_calls_proceed(self):
+        """First N calls within limit should not be cancelled."""
+        limiter = ToolLimiter(max_tool_calls_per_turn=3)
+        limiter._on_message_added(_assistant_with_tools(3))
+        for i in range(3):
+            event = _before_tool_call(f"tool-{i}")
+            limiter._on_before_tool_call(event)
+            assert event.cancel_tool is False
+
+    def test_excess_calls_cancelled(self):
+        """Calls beyond the limit should be cancelled with error message."""
+        limiter = ToolLimiter(max_tool_calls_per_turn=2)
+        limiter._on_message_added(_assistant_with_tools(4))
+        # First 2 proceed
+        for i in range(2):
+            event = _before_tool_call(f"tool-{i}")
+            limiter._on_before_tool_call(event)
+            assert event.cancel_tool is False
+        # 3rd and 4th cancelled
+        for i in range(2, 4):
+            event = _before_tool_call(f"tool-{i}")
+            limiter._on_before_tool_call(event)
+            assert "Max tool calls per turn (2) reached" in event.cancel_tool
+
+    def test_cancelled_tool_call_count(self):
+        """cancelled_tool_call_count should track the number of cancelled calls."""
+        limiter = ToolLimiter(max_tool_calls_per_turn=1)
+        limiter._on_message_added(_assistant_with_tools(3))
+        for i in range(3):
+            limiter._on_before_tool_call(_before_tool_call(f"tool-{i}"))
+        assert limiter.cancelled_tool_call_count == 2
+
+    def test_counter_resets_on_new_turn(self):
+        """Per-turn counter resets when a new assistant message with tools arrives."""
+        limiter = ToolLimiter(max_tool_calls_per_turn=1)
+
+        # Turn 1: 1 allowed, 1 cancelled
+        limiter._on_message_added(_assistant_with_tools(2))
+        event1 = _before_tool_call("tool-0")
+        limiter._on_before_tool_call(event1)
+        assert event1.cancel_tool is False
+        event2 = _before_tool_call("tool-1")
+        limiter._on_before_tool_call(event2)
+        assert event2.cancel_tool is not False
+
+        # Complete iteration
+        limiter._on_message_added(_tool_result())
+
+        # Turn 2: counter resets, first call should proceed
+        limiter._on_message_added(_assistant_with_tools(1))
+        event3 = _before_tool_call("tool-2")
+        limiter._on_before_tool_call(event3)
+        assert event3.cancel_tool is False
+
+    def test_none_means_no_limit(self):
+        """max_tool_calls_per_turn=None should never cancel."""
+        limiter = ToolLimiter(max_tool_calls_per_turn=None)
+        limiter._on_message_added(_assistant_with_tools(100))
+        for i in range(100):
+            event = _before_tool_call(f"tool-{i}")
+            limiter._on_before_tool_call(event)
+            assert event.cancel_tool is False
+        assert limiter.cancelled_tool_call_count == 0
+
+    def test_zero_cancels_all(self):
+        """max_tool_calls_per_turn=0 cancels every tool call."""
+        limiter = ToolLimiter(max_tool_calls_per_turn=0)
+        limiter._on_message_added(_assistant_with_tools(2))
+        for i in range(2):
+            event = _before_tool_call(f"tool-{i}")
+            limiter._on_before_tool_call(event)
+            assert "Max tool calls per turn (0) reached" in event.cancel_tool
+        assert limiter.cancelled_tool_call_count == 2
+
+    def test_with_max_tool_iters(self):
+        """Per-turn limit works alongside max_tool_iters."""
+        limiter = ToolLimiter(max_tool_iters=2, max_tool_calls_per_turn=1)
+
+        # Turn 1: 1 allowed, 1 cancelled
+        limiter._on_message_added(_assistant_with_tools(2))
+        event1 = _before_tool_call("tool-0")
+        limiter._on_before_tool_call(event1)
+        assert event1.cancel_tool is False
+        event2 = _before_tool_call("tool-1")
+        limiter._on_before_tool_call(event2)
+        assert event2.cancel_tool is not False
+        limiter._on_message_added(_tool_result())  # iter 1 complete
+
+        # Turn 2: iter limit should still fire
+        limiter._on_message_added(_assistant_with_tools(1))
+        with pytest.raises(MaxToolIterationsReachedError):
+            limiter._on_message_added(_tool_result())
+
+    def test_with_max_tool_calls(self):
+        """Per-turn limit works alongside max_tool_calls."""
+        limiter = ToolLimiter(max_tool_calls=4, max_tool_calls_per_turn=2)
+
+        # Turn 1: assistant requests 3, per-turn allows 2, 1 cancelled
+        # tool_call_count becomes 3 (counted from assistant message)
+        limiter._on_message_added(_assistant_with_tools(3))
+        for i in range(2):
+            event = _before_tool_call(f"tool-{i}")
+            limiter._on_before_tool_call(event)
+            assert event.cancel_tool is False
+        event = _before_tool_call("tool-2")
+        limiter._on_before_tool_call(event)
+        assert event.cancel_tool is not False
+        limiter._on_message_added(_tool_result())  # tool_call_count=3 < 4, ok
+
+        # Turn 2: assistant requests 2, total becomes 5 >= 4, should fire
+        limiter._on_message_added(_assistant_with_tools(2))
+        with pytest.raises(MaxToolCallsReachedError):
+            limiter._on_message_added(_tool_result())
+
+    def test_init_default_is_none(self):
+        limiter = ToolLimiter()
+        assert limiter.max_tool_calls_per_turn is None
+
+    def test_reset_clears_per_turn_counters(self):
+        limiter = ToolLimiter(max_tool_calls_per_turn=1)
+        limiter._turn_call_count = 5
+        limiter.cancelled_tool_call_count = 3
+        limiter.reset()
+        assert limiter._turn_call_count == 0
+        assert limiter.cancelled_tool_call_count == 0
