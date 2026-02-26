@@ -214,13 +214,27 @@ class SGLangModel(Model):
     ) -> str:
         """Format messages into a prompt ready for model generation.
 
-        Applies the HuggingFace chat template with `add_generation_prompt=True`,
-        which appends the assistant turn prefix for the model to continue.
+        Tries the tool parser's ``format_prompt`` first (for models without a
+        Jinja chat template, e.g. DeepSeek-V3.2).  Falls back to the
+        HuggingFace ``tokenizer.apply_chat_template()`` when the parser
+        returns ``None``.
 
         The result is manually tokenized (not model-generated) and added to
         the token trajectory with `loss_mask=False`.
         """
         chat_messages = self.format_request_messages(messages, system_prompt)
+
+        # Try parser-provided encoding first (for models without Jinja templates)
+        if self.tool_parser is not None:
+            result = self.tool_parser.format_prompt(
+                chat_messages,
+                tools=tools,
+                add_generation_prompt=True,
+                enable_thinking=self.config.get("enable_thinking"),
+            )
+            if result is not None:
+                return result
+
         return self.tokenizer.apply_chat_template(
             conversation=chat_messages,
             tools=tools,

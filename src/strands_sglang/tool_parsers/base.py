@@ -133,6 +133,34 @@ class ToolParser(ABC):
         """
         return ""
 
+    def format_prompt(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict] | None = None,
+        *,
+        add_generation_prompt: bool = True,
+        enable_thinking: bool | None = None,
+    ) -> str | None:
+        """Format messages into a prompt string.
+
+        Override in subclasses for models that don't ship a Jinja chat template
+        (e.g., DeepSeek-V3.2 which uses ``encoding/encoding_dsv32.py``).
+
+        When this returns a string, ``SGLangModel`` uses it instead of
+        ``tokenizer.apply_chat_template()``.  The default returns ``None``,
+        which means "use the tokenizer's Jinja template as usual".
+
+        Args:
+            messages: Conversation messages in OpenAI format.
+            tools: Tool definitions in OpenAI format, or None.
+            add_generation_prompt: Whether to append the generation prompt.
+            enable_thinking: Whether thinking/reasoning mode is active.
+
+        Returns:
+            Formatted prompt string, or None to fall back to apply_chat_template.
+        """
+        return None
+
     @abstractmethod
     def parse(self, text: str) -> list[ToolParseResult]:
         """Parse tool calls from model output text.
