@@ -17,8 +17,10 @@
 import pytest
 
 from strands_sglang.tool_parsers import (
+    DeepSeekV32ToolParser,
     GLMToolParser,
     HermesToolParser,
+    KimiK2ToolParser,
     QwenXMLToolParser,
     ToolParseResult,
 )
@@ -1150,6 +1152,670 @@ No, let me reconsider...
         assert results[0].input["limit"] == 5  # JSON-decoded as integer
 
 
+class TestKimiK2ToolParser:
+    """Tests for KimiK2ToolParser (Kimi K2/K2.5 format)."""
+
+    @pytest.fixture
+    def parser(self):
+        """Create a default parser."""
+        return KimiK2ToolParser()
+
+    # --- Basic Parsing ---
+
+    def test_parse_single_tool_call(self, parser):
+        """Parse a single valid tool call."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.calculator:0"
+            '<|tool_call_argument_begin|>{"x": 1, "y": 2}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "calculator"
+        assert results[0].input == {"x": 1, "y": 2}
+        assert results[0].id == "call_0000"
+        assert results[0].is_error is False
+
+    def test_parse_multiple_tool_calls(self, parser):
+        """Parse multiple tool calls in one section."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.tool_a:0"
+            '<|tool_call_argument_begin|>{"a": 1}'
+            "<|tool_call_end|>"
+            "<|tool_call_begin|>functions.tool_b:1"
+            '<|tool_call_argument_begin|>{"b": 2}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 2
+        assert results[0].name == "tool_a"
+        assert results[0].input == {"a": 1}
+        assert results[0].id == "call_0000"
+        assert results[1].name == "tool_b"
+        assert results[1].input == {"b": 2}
+        assert results[1].id == "call_0001"
+
+    def test_parse_no_tool_calls(self, parser):
+        """Return empty list when no tool calls present."""
+        text = "Just some regular text without any tool calls."
+        results = parser.parse(text)
+
+        assert len(results) == 0
+
+    def test_parse_empty_string(self, parser):
+        """Handle empty string."""
+        results = parser.parse("")
+        assert len(results) == 0
+
+    def test_parse_with_surrounding_text(self, parser):
+        """Parse tool calls surrounded by regular text."""
+        text = (
+            "I'll help you with that calculation.\n"
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.calculator:0"
+            '<|tool_call_argument_begin|>{"x": 10, "y": 20}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+            "\nHere is the result."
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "calculator"
+        assert results[0].input == {"x": 10, "y": 20}
+
+    # --- Argument Handling ---
+
+    def test_parse_empty_arguments(self, parser):
+        """Tool call with empty arguments object."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.no_args:0"
+            "<|tool_call_argument_begin|>{}"
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "no_args"
+        assert results[0].input == {}
+        assert results[0].is_error is False
+
+    def test_parse_complex_arguments(self, parser):
+        """Parse complex nested JSON arguments."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.complex_tool:0"
+            '<|tool_call_argument_begin|>{"data": {"nested": [1, 2, 3]}, "flag": true}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].input == {"data": {"nested": [1, 2, 3]}, "flag": True}
+
+    def test_parse_string_arguments(self, parser):
+        """Parse string argument values."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.search:0"
+            '<|tool_call_argument_begin|>{"query": "hello world", "limit": 10}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].input["query"] == "hello world"
+        assert results[0].input["limit"] == 10
+
+    def test_parse_non_dict_arguments_becomes_empty(self, parser):
+        """Non-dict JSON (e.g., array) is replaced with empty dict."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.tool:0"
+            "<|tool_call_argument_begin|>[1, 2, 3]"
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].input == {}
+        assert results[0].is_error is False
+
+    # --- Function Name Extraction ---
+
+    def test_parse_extracts_name_from_dotted_format(self, parser):
+        """Function name extracted from functions.name:index format."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.my_awesome_tool:0"
+            '<|tool_call_argument_begin|>{"key": "val"}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "my_awesome_tool"
+
+    def test_parse_hyphenated_function_name(self, parser):
+        """Function names with hyphens are parsed correctly."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.web-search:0"
+            '<|tool_call_argument_begin|>{"q": "test"}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "web-search"
+
+    def test_parse_dotted_function_name(self, parser):
+        """Function names with dots are fully preserved."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.module.sub_tool:0"
+            '<|tool_call_argument_begin|>{"x": 1}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "module.sub_tool"
+
+    def test_parse_no_dot_in_id_uses_raw(self, parser):
+        """ID without a dot falls back to using the full raw ID as name."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>calculator:0"
+            '<|tool_call_argument_begin|>{"x": 1}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "calculator:0"
+
+    def test_sequential_ids_generated(self, parser):
+        """IDs are sequential call_NNNN format."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.a:0"
+            '<|tool_call_argument_begin|>{"x": 1}'
+            "<|tool_call_end|>"
+            "<|tool_call_begin|>functions.b:1"
+            '<|tool_call_argument_begin|>{"x": 2}'
+            "<|tool_call_end|>"
+            "<|tool_call_begin|>functions.c:2"
+            '<|tool_call_argument_begin|>{"x": 3}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert [r.id for r in results] == ["call_0000", "call_0001", "call_0002"]
+
+    def test_sequential_ids_across_sections(self, parser):
+        """IDs continue incrementing across multiple sections."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.first:0"
+            '<|tool_call_argument_begin|>{"a": 1}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.second:0"
+            '<|tool_call_argument_begin|>{"b": 2}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert results[0].id == "call_0000"
+        assert results[1].id == "call_0001"
+
+    # --- Error Cases ---
+
+    def test_parse_malformed_json(self, parser):
+        """Malformed JSON creates error result."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.tool:0"
+            "<|tool_call_argument_begin|>{malformed json}"
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].is_error is True
+        assert results[0].name == "tool"
+        assert results[0].raw == "{malformed json}"
+
+    def test_parse_truncated_json(self, parser):
+        """Truncated JSON creates error result."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.tool:0"
+            '<|tool_call_argument_begin|>{"key": "val'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].is_error is True
+        assert results[0].name == "tool"
+
+    def test_parse_mixed_valid_and_invalid(self, parser):
+        """Valid and invalid calls in same section."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.good:0"
+            '<|tool_call_argument_begin|>{"a": 1}'
+            "<|tool_call_end|>"
+            "<|tool_call_begin|>functions.bad:1"
+            "<|tool_call_argument_begin|>{broken"
+            "<|tool_call_end|>"
+            "<|tool_call_begin|>functions.also_good:2"
+            '<|tool_call_argument_begin|>{"b": 2}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 3
+        assert results[0].is_error is False
+        assert results[0].name == "good"
+        assert results[1].is_error is True
+        assert results[1].name == "bad"
+        assert results[2].is_error is False
+        assert results[2].name == "also_good"
+
+    def test_parse_unclosed_section(self, parser):
+        """Unclosed section yields no results."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.tool:0"
+            '<|tool_call_argument_begin|>{"a": 1}'
+            "<|tool_call_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 0
+
+    # --- Think Block Handling ---
+
+    def test_parse_ignores_tool_calls_in_think_block(self, parser):
+        """Tool calls inside <think> blocks are excluded."""
+        text = (
+            "<think>Let me think about this...\n"
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.draft:0"
+            '<|tool_call_argument_begin|>{"a": 1}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+            "</think>"
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.real:0"
+            '<|tool_call_argument_begin|>{"b": 2}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "real"
+        assert results[0].input == {"b": 2}
+
+    def test_parse_think_block_only(self, parser):
+        """Only think block tool calls returns empty list."""
+        text = (
+            "<think>"
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.draft:0"
+            '<|tool_call_argument_begin|>{"a": 1}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+            "</think>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 0
+
+    # --- Whitespace Handling ---
+
+    def test_parse_with_whitespace_in_tokens(self, parser):
+        """Whitespace between tokens is tolerated."""
+        text = (
+            "<|tool_calls_section_begin|>\n"
+            "  <|tool_call_begin|> functions.calculator:0 \n"
+            '  <|tool_call_argument_begin|> {"x": 1} \n'
+            "  <|tool_call_end|>\n"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "calculator"
+        assert results[0].input == {"x": 1}
+
+    # --- Multiple Sections ---
+
+    def test_parse_multiple_sections(self, parser):
+        """Parse tool calls from multiple sections."""
+        text = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.first:0"
+            '<|tool_call_argument_begin|>{"a": 1}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+            "Some text in between"
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.second:0"
+            '<|tool_call_argument_begin|>{"b": 2}'
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 2
+        assert results[0].name == "first"
+        assert results[1].name == "second"
+
+    # --- Message Separator ---
+
+    def test_message_separator_is_empty(self, parser):
+        """Kimi K2 uses no message separator."""
+        assert parser.message_separator == ""
+
+
+class TestDeepSeekV32ToolParser:
+    """Tests for DeepSeekV32ToolParser (DeepSeek-V3.2 format)."""
+
+    # DSML tag helpers for readable test strings
+    _D = "\uff5cDSML\uff5c"  # ｜DSML｜
+    FC_S = f"<{_D}function_calls>"
+    FC_E = f"</{_D}function_calls>"
+    INV_S = f"<{_D}invoke"  # needs name="..."> appended
+    INV_E = f"</{_D}invoke>"
+    PAR_S = f"<{_D}parameter"  # needs name="..." string="..."> appended
+    PAR_E = f"</{_D}parameter>"
+
+    @pytest.fixture
+    def parser(self):
+        """Create a default parser."""
+        return DeepSeekV32ToolParser()
+
+    def _invoke(self, name, body):
+        """Build an invoke block."""
+        return f'{self.INV_S} name="{name}">\n{body}\n{self.INV_E}'
+
+    def _param(self, name, value, string="false"):
+        """Build a parameter tag."""
+        return f'{self.PAR_S} name="{name}" string="{string}">{value}{self.PAR_E}'
+
+    def _fc(self, *invokes):
+        """Build a function_calls section."""
+        return f"{self.FC_S}\n" + "\n".join(invokes) + f"\n{self.FC_E}"
+
+    # --- Basic Parsing ---
+
+    def test_parse_single_tool_call(self, parser):
+        """Parse a single valid tool call with typed parameters."""
+        text = self._fc(
+            self._invoke("calculator", self._param("x", "1") + "\n" + self._param("y", "2"))
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "calculator"
+        assert results[0].input == {"x": 1, "y": 2}
+        assert results[0].id == "call_0000"
+        assert results[0].is_error is False
+
+    def test_parse_string_parameter(self, parser):
+        """String parameters with string='true' are kept as-is."""
+        text = self._fc(
+            self._invoke(
+                "search",
+                self._param("query", "hello world", string="true") + "\n" + self._param("limit", "10"),
+            )
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].input["query"] == "hello world"
+        assert results[0].input["limit"] == 10
+
+    def test_parse_multiple_tool_calls(self, parser):
+        """Parse multiple invoke blocks in one function_calls section."""
+        text = self._fc(
+            self._invoke("tool_a", self._param("a", "1")),
+            self._invoke("tool_b", self._param("b", "hello", string="true")),
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 2
+        assert results[0].name == "tool_a"
+        assert results[0].input == {"a": 1}
+        assert results[0].id == "call_0000"
+        assert results[1].name == "tool_b"
+        assert results[1].input == {"b": "hello"}
+        assert results[1].id == "call_0001"
+
+    def test_parse_no_tool_calls(self, parser):
+        """Return empty list when no tool calls present."""
+        text = "Just some regular text without any tool calls."
+        results = parser.parse(text)
+
+        assert len(results) == 0
+
+    def test_parse_empty_string(self, parser):
+        """Handle empty string."""
+        results = parser.parse("")
+        assert len(results) == 0
+
+    def test_parse_with_surrounding_text(self, parser):
+        """Parse tool calls surrounded by regular text."""
+        text = "Let me calculate that for you.\n" + self._fc(
+            self._invoke("calculator", self._param("x", "42"))
+        ) + "\nHere is the result."
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "calculator"
+        assert results[0].input == {"x": 42}
+
+    # --- Parameter Type Handling ---
+
+    def test_parse_boolean_parameter(self, parser):
+        """Non-string boolean parameter is JSON-decoded."""
+        text = self._fc(self._invoke("config", self._param("verbose", "true")))
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].input["verbose"] is True
+
+    def test_parse_list_parameter(self, parser):
+        """Non-string list parameter is JSON-decoded."""
+        text = self._fc(self._invoke("batch", self._param("items", "[1, 2, 3]")))
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].input["items"] == [1, 2, 3]
+
+    def test_parse_object_parameter(self, parser):
+        """Non-string object parameter is JSON-decoded."""
+        text = self._fc(self._invoke("update", self._param("data", '{"key": "val"}')))
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].input["data"] == {"key": "val"}
+
+    def test_parse_non_string_invalid_json_falls_back_to_string(self, parser):
+        """Non-string parameter with invalid JSON falls back to raw string."""
+        text = self._fc(self._invoke("tool", self._param("val", "not json")))
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].input["val"] == "not json"
+
+    def test_parse_no_parameters(self, parser):
+        """Invoke with no parameters yields empty arguments."""
+        text = self._fc(self._invoke("no_args", ""))
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "no_args"
+        assert results[0].input == {}
+        assert results[0].is_error is False
+
+    # --- JSON Fallback ---
+
+    def test_parse_json_fallback(self, parser):
+        """When no parameter tags, try parsing invoke body as JSON."""
+        text = self._fc(self._invoke("calculator", '{"x": 1, "y": 2}'))
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "calculator"
+        assert results[0].input == {"x": 1, "y": 2}
+        assert results[0].is_error is False
+
+    def test_parse_json_fallback_non_dict_becomes_empty(self, parser):
+        """JSON fallback with non-dict value becomes empty arguments."""
+        text = self._fc(self._invoke("tool", "[1, 2, 3]"))
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].input == {}
+        assert results[0].is_error is False
+
+    def test_parse_json_fallback_invalid_json_error(self, parser):
+        """JSON fallback with invalid JSON creates error result."""
+        text = self._fc(self._invoke("tool", "this is not json"))
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].is_error is True
+        assert results[0].name == "tool"
+
+    # --- Error Cases ---
+
+    def test_parse_mixed_valid_and_invalid(self, parser):
+        """Valid and invalid calls in same section."""
+        text = self._fc(
+            self._invoke("good", self._param("a", "1")),
+            self._invoke("bad", "broken content"),
+            self._invoke("also_good", self._param("b", "2")),
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 3
+        assert results[0].is_error is False
+        assert results[0].name == "good"
+        assert results[1].is_error is True
+        assert results[1].name == "bad"
+        assert results[2].is_error is False
+        assert results[2].name == "also_good"
+
+    def test_parse_unclosed_function_calls(self, parser):
+        """Unclosed function_calls yields no results."""
+        text = self.FC_S + "\n" + self._invoke("tool", self._param("x", "1"))
+        results = parser.parse(text)
+
+        assert len(results) == 0
+
+    # --- Think Block Handling ---
+
+    def test_parse_ignores_tool_calls_in_think_block(self, parser):
+        """Tool calls inside <think> blocks are excluded."""
+        draft = self._fc(self._invoke("draft", self._param("a", "1")))
+        real = self._fc(self._invoke("real", self._param("b", "2")))
+        text = f"<think>Let me think...\n{draft}\n</think>\n{real}"
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "real"
+        assert results[0].input == {"b": 2}
+
+    def test_parse_think_block_only(self, parser):
+        """Only think block tool calls returns empty list."""
+        draft = self._fc(self._invoke("draft", self._param("a", "1")))
+        text = f"<think>\n{draft}\n</think>"
+        results = parser.parse(text)
+
+        assert len(results) == 0
+
+    # --- Sequential IDs ---
+
+    def test_sequential_ids_generated(self, parser):
+        """IDs are sequential call_NNNN format."""
+        text = self._fc(
+            self._invoke("a", self._param("x", "1")),
+            self._invoke("b", self._param("x", "2")),
+            self._invoke("c", self._param("x", "3")),
+        )
+        results = parser.parse(text)
+
+        assert [r.id for r in results] == ["call_0000", "call_0001", "call_0002"]
+
+    def test_sequential_ids_across_sections(self, parser):
+        """IDs continue incrementing across multiple function_calls sections."""
+        s1 = self._fc(self._invoke("first", self._param("a", "1")))
+        s2 = self._fc(self._invoke("second", self._param("b", "2")))
+        text = f"{s1}\ntext in between\n{s2}"
+        results = parser.parse(text)
+
+        assert results[0].id == "call_0000"
+        assert results[1].id == "call_0001"
+
+    # --- Custom Tokens ---
+
+    def test_default_tool_tokens(self, parser):
+        """Default tool tokens are DSML-prefixed function_calls tags."""
+        assert "\uff5cDSML\uff5c" in parser.tool_start_token
+        assert "function_calls" in parser.tool_start_token
+        assert "\uff5cDSML\uff5c" in parser.tool_end_token
+
+    def test_custom_think_tokens(self):
+        """Custom think tokens are respected."""
+        parser = DeepSeekV32ToolParser(think_start_token="<reasoning>", think_end_token="</reasoning>")
+        draft = self._fc(self._invoke("draft", self._param("a", "1")))
+        real = self._fc(self._invoke("real", self._param("b", "2")))
+        text = f"<reasoning>draft\n{draft}\n</reasoning>\n{real}"
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "real"
+
+    # --- Message Separator ---
+
+    def test_message_separator_is_eos_token(self, parser):
+        """DeepSeek-V3.2 uses special EOS token as message separator."""
+        sep = parser.message_separator
+        assert "\uff5c" in sep  # fullwidth pipe
+        assert "\u2581" in sep  # half-width space
+        assert "end" in sep
+        assert "of" in sep
+        assert "sentence" in sep
+
+
 class TestToolParserRegistry:
     """Tests for tool parser registry."""
 
@@ -1208,3 +1874,287 @@ class TestToolParserRegistry:
 
         assert "glm" in TOOL_PARSER_REGISTRY
         assert TOOL_PARSER_REGISTRY["glm"] is GLMToolParser
+
+    def test_get_kimi_k2_parser(self):
+        """Get kimi_k2 parser by name."""
+        from strands_sglang.tool_parsers import get_tool_parser
+
+        parser = get_tool_parser("kimi_k2")
+        assert isinstance(parser, KimiK2ToolParser)
+
+    def test_registry_contains_kimi_k2(self):
+        """Registry contains kimi_k2 parser."""
+        from strands_sglang.tool_parsers import TOOL_PARSER_REGISTRY
+
+        assert "kimi_k2" in TOOL_PARSER_REGISTRY
+        assert TOOL_PARSER_REGISTRY["kimi_k2"] is KimiK2ToolParser
+
+    def test_get_deepseek_v32_parser(self):
+        """Get deepseek_v32 parser by name."""
+        from strands_sglang.tool_parsers import get_tool_parser
+
+        parser = get_tool_parser("deepseek_v32")
+        assert isinstance(parser, DeepSeekV32ToolParser)
+
+    def test_registry_contains_deepseek_v32(self):
+        """Registry contains deepseek_v32 parser."""
+        from strands_sglang.tool_parsers import TOOL_PARSER_REGISTRY
+
+        assert "deepseek_v32" in TOOL_PARSER_REGISTRY
+        assert TOOL_PARSER_REGISTRY["deepseek_v32"] is DeepSeekV32ToolParser
+
+
+class TestDeepSeekV32FormatPrompt:
+    """Tests for DeepSeekV32ToolParser.format_prompt.
+
+    The default constructor auto-downloads encoding_dsv32.py from HuggingFace.
+    Module-delegation tests use a mock encoding module.
+    """
+
+    @pytest.fixture
+    def parser(self):
+        return DeepSeekV32ToolParser()
+
+    def test_default_loads_encoding_module(self, parser):
+        """Default constructor loads encoding module from deepseek-ai/DeepSeek-V3.2."""
+        assert parser._encoding_module is not None
+        messages = [{"role": "user", "content": "hello"}]
+        result = parser.format_prompt(messages)
+        assert result is not None
+        assert isinstance(result, str)
+
+    def test_base_parser_returns_none(self):
+        """Base ToolParser.format_prompt returns None."""
+        result = HermesToolParser().format_prompt([{"role": "user", "content": "hi"}])
+        assert result is None
+
+    def test_delegates_to_encoding_module(self):
+        """When encoding module is loaded, format_prompt delegates to it."""
+        parser = DeepSeekV32ToolParser()
+
+        # Mock encoding module with minimal encode_messages and render_tools
+        import types
+
+        mock_mod = types.ModuleType("encoding_dsv32")
+        mock_mod.encode_messages = lambda messages, thinking_mode: f"encoded:{thinking_mode}"
+        parser._encoding_module = mock_mod
+
+        messages = [{"role": "user", "content": "hello"}]
+        result = parser.format_prompt(messages)
+        assert result == "encoded:chat"
+
+    def test_delegates_with_thinking_mode(self):
+        """Thinking mode is passed through to the encoding module."""
+        parser = DeepSeekV32ToolParser()
+
+        import types
+
+        mock_mod = types.ModuleType("encoding_dsv32")
+        mock_mod.encode_messages = lambda messages, thinking_mode: f"encoded:{thinking_mode}"
+        parser._encoding_module = mock_mod
+
+        result = parser.format_prompt([{"role": "user", "content": "hi"}], enable_thinking=True)
+        assert result == "encoded:thinking"
+
+    def test_delegates_with_tools(self):
+        """Tools are attached to system message before delegating."""
+        parser = DeepSeekV32ToolParser()
+
+        import types
+
+        mock_mod = types.ModuleType("encoding_dsv32")
+        captured = {}
+
+        def mock_encode(messages, thinking_mode):
+            captured["messages"] = messages
+            return "encoded"
+
+        mock_mod.encode_messages = mock_encode
+        parser._encoding_module = mock_mod
+
+        messages = [
+            {"role": "system", "content": "System prompt."},
+            {"role": "user", "content": "hi"},
+        ]
+        tools = [{"type": "function", "function": {"name": "search", "description": "Search", "parameters": {}}}]
+
+        result = parser.format_prompt(messages, tools=tools)
+        assert result == "encoded"
+        # Tools should be attached to system message for the encoding module to handle
+        assert captured["messages"][0]["tools"] == tools
+
+    def test_tools_creates_system_message_if_missing(self):
+        """When no system message exists, tools create a synthetic one."""
+        parser = DeepSeekV32ToolParser()
+
+        import types
+
+        mock_mod = types.ModuleType("encoding_dsv32")
+        captured = {}
+
+        def mock_encode(messages, thinking_mode):
+            captured["messages"] = messages
+            return "encoded"
+
+        mock_mod.encode_messages = mock_encode
+        parser._encoding_module = mock_mod
+
+        messages = [{"role": "user", "content": "hi"}]
+        tools = [{"type": "function", "function": {"name": "f", "description": "d", "parameters": {}}}]
+
+        parser.format_prompt(messages, tools=tools)
+        assert captured["messages"][0]["role"] == "system"
+        assert captured["messages"][0]["tools"] == tools
+        assert captured["messages"][1]["role"] == "user"
+
+    def test_format_prompt_does_not_mutate_messages(self):
+        """format_prompt does not modify the input message list."""
+        parser = DeepSeekV32ToolParser()
+
+        import types
+
+        mock_mod = types.ModuleType("encoding_dsv32")
+        mock_mod.encode_messages = lambda messages, thinking_mode: "encoded"
+        parser._encoding_module = mock_mod
+
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "hi"},
+        ]
+        tools = [{"type": "function", "function": {"name": "f", "description": "d", "parameters": {}}}]
+        parser.format_prompt(messages, tools=tools)
+        assert "tools" not in messages[0]
+        assert messages[0]["content"] == "sys"
+        assert len(messages) == 2
+
+    def test_load_encoding_module_file_not_found(self, tmp_path):
+        """Loading from a local path without encoding file raises FileNotFoundError."""
+        with pytest.raises(FileNotFoundError, match="Encoding file not found"):
+            DeepSeekV32ToolParser(model_name_or_path=str(tmp_path))
+
+    def test_load_encoding_module_local_path(self, tmp_path):
+        """Loading from a local path with encoding file succeeds."""
+        encoding_dir = tmp_path / "encoding"
+        encoding_dir.mkdir()
+        encoding_file = encoding_dir / "encoding_dsv32.py"
+        encoding_file.write_text(
+            "def encode_messages(messages, thinking_mode): return 'local'\n"
+            "def render_tools(tools): return 'tools'\n"
+        )
+        parser = DeepSeekV32ToolParser(model_name_or_path=str(tmp_path))
+        assert parser._encoding_module is not None
+        result = parser.format_prompt([{"role": "user", "content": "hi"}])
+        assert result == "local"
+
+    @pytest.mark.parametrize("thinking_mode", [False, True])
+    def test_load_real_encoding_module(self, thinking_mode):
+        """Load the real encoding_dsv32.py from deepseek-ai/DeepSeek-V3.2.
+
+        Verifies format_prompt produces exactly the same output as calling
+        the reference module directly.
+        """
+        parser = DeepSeekV32ToolParser(model_name_or_path="deepseek-ai/DeepSeek-V3.2")
+        assert parser._encoding_module is not None
+
+        # Verify the module has the expected interface
+        mod = parser._encoding_module
+        assert hasattr(mod, "encode_messages")
+        assert hasattr(mod, "render_tools")
+        assert callable(mod.encode_messages)
+        assert callable(mod.render_tools)
+
+        # Test format_prompt with a multi-turn conversation including tool calls
+        messages = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "What is the weather?"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"city": "London"}',
+                        },
+                    }
+                ],
+            },
+            {"role": "tool", "content": "Sunny, 22C"},
+            {"role": "user", "content": "Thanks!"},
+        ]
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get weather for a city",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                    },
+                },
+            }
+        ]
+        thinking_mode_str = "thinking" if thinking_mode else "chat"
+        result = parser.format_prompt(messages, tools=tools, enable_thinking=thinking_mode)
+
+        # Build expected output by calling the reference module directly
+        # (same steps as format_prompt: attach tools to system message, then encode)
+        import copy
+
+        expected_messages = copy.deepcopy(messages)
+        expected_messages[0]["tools"] = tools
+        expected = mod.encode_messages(expected_messages, thinking_mode=thinking_mode_str)
+
+        assert result == expected
+
+        # Roundtrip: tool calls encoded by format_prompt can be parsed back.
+        # The system prompt's tool documentation also contains example invoke
+        # blocks (with $FUNCTION_NAME placeholders), so filter for real calls.
+        parsed = parser.parse(result)
+        real_calls = [p for p in parsed if not p.is_error]
+        assert len(real_calls) == 1
+        assert real_calls[0].name == "get_weather"
+        assert real_calls[0].input["city"] == "London"
+
+    def test_format_incremental_tool_results(self, parser):
+        """Tool-result-only messages use _format_incremental instead of encode_messages."""
+        messages = [
+            {"role": "tool", "content": "Sunny, 22C"},
+            {"role": "tool", "content": "Rainy, 15C"},
+        ]
+        result = parser.format_prompt(messages)
+        assert result is not None
+        assert "<function_results>" in result
+        assert "</function_results>" in result
+        assert "<result>Sunny, 22C</result>" in result
+        assert "<result>Rainy, 15C</result>" in result
+        # Default: chat mode → </think> generation prompt
+        assert result.endswith("\n\n</think>")
+
+    def test_format_incremental_single_result(self, parser):
+        """Single tool result is formatted correctly with generation prompt."""
+        messages = [{"role": "tool", "content": "42"}]
+        result = parser.format_prompt(messages)
+        assert result == "\n\n<function_results>\n<result>42</result>\n</function_results>\n\n</think>"
+
+    def test_format_incremental_thinking_mode(self, parser):
+        """Incremental format uses <think> generation prompt in thinking mode."""
+        messages = [{"role": "tool", "content": "42"}]
+        result = parser.format_prompt(messages, enable_thinking=True)
+        assert result.endswith("\n\n<think>")
+
+    def test_format_incremental_no_generation_prompt(self, parser):
+        """Incremental format omits generation prompt when add_generation_prompt=False."""
+        messages = [{"role": "tool", "content": "42"}]
+        result = parser.format_prompt(messages, add_generation_prompt=False)
+        assert result == "\n\n<function_results>\n<result>42</result>\n</function_results>"
+
+    def test_skip_special_tokens_is_false(self, parser):
+        """DeepSeekV32ToolParser requires special tokens preserved."""
+        assert parser.skip_special_tokens is False
+
+    def test_base_skip_special_tokens_is_true(self):
+        """Base ToolParser defaults to skip_special_tokens=True."""
+        assert HermesToolParser().skip_special_tokens is True

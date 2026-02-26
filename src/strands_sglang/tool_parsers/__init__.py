@@ -31,8 +31,10 @@ Adding a new parser:
 from .base import TOOL_PARSER_REGISTRY, ToolParser, ToolParseResult, get_tool_parser
 
 # Import parsers to trigger registration via @register_tool_parser decorator
+from .deepseek_v32 import DeepSeekV32ToolParser
 from .glm import GLMToolParser
 from .hermes import HermesToolParser
+from .kimi_k2 import KimiK2ToolParser
 from .qwen_xml import QwenXMLToolParser
 
 __all__ = [
@@ -40,8 +42,10 @@ __all__ = [
     "ToolParseResult",
     "ToolParser",
     # Parsers
+    "DeepSeekV32ToolParser",
     "GLMToolParser",
     "HermesToolParser",
+    "KimiK2ToolParser",
     "QwenXMLToolParser",
     # Registry
     "TOOL_PARSER_REGISTRY",

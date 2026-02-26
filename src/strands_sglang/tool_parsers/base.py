@@ -90,6 +90,12 @@ class ToolParser(ABC):
     DEFAULT_THINK_START_TOKEN = "<think>"
     DEFAULT_THINK_END_TOKEN = "</think>"
 
+    #: Whether to skip special tokens when decoding output_ids for tool parsing.
+    #: SGLang's server returns text with skip_special_tokens=True by default,
+    #: which strips tokens like ｜DSML｜ that are needed for parsing.
+    #: Override to False in subclasses whose tool call format uses special tokens.
+    skip_special_tokens: bool = True
+
     def __init__(
         self,
         tool_start_token: str = DEFAULT_TOOL_START_TOKEN,
@@ -132,6 +138,34 @@ class ToolParser(ABC):
         Default is no separator.
         """
         return ""
+
+    def format_prompt(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict] | None = None,
+        *,
+        add_generation_prompt: bool = True,
+        enable_thinking: bool | None = None,
+    ) -> str | None:
+        """Format messages into a prompt string.
+
+        Override in subclasses for models that don't ship a Jinja chat template
+        (e.g., DeepSeek-V3.2 which uses ``encoding/encoding_dsv32.py``).
+
+        When this returns a string, ``SGLangModel`` uses it instead of
+        ``tokenizer.apply_chat_template()``.  The default returns ``None``,
+        which means "use the tokenizer's Jinja template as usual".
+
+        Args:
+            messages: Conversation messages in OpenAI format.
+            tools: Tool definitions in OpenAI format, or None.
+            add_generation_prompt: Whether to append the generation prompt.
+            enable_thinking: Whether thinking/reasoning mode is active.
+
+        Returns:
+            Formatted prompt string, or None to fall back to apply_chat_template.
+        """
+        return None
 
     @abstractmethod
     def parse(self, text: str) -> list[ToolParseResult]:
