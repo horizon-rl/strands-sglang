@@ -112,7 +112,6 @@ class SGLangModel(Model):
         # State tracking (this makes SGLangModel stateful)
         self.token_manager = TokenManager()
         self._processed_message_count: int = 0
-        self._current_tools: list[dict] | None = None
         self.tool_parse_errors: dict[str, int] = {}  # per-tool parse error count
 
         logger.debug(f"initialized with config: {self.config}")
@@ -125,7 +124,6 @@ class SGLangModel(Model):
         """
         self.token_manager.reset()
         self._processed_message_count = 0
-        self._current_tools = None
         self.tool_parse_errors = {}
 
     # -------------------------------------------------------------------------
@@ -266,6 +264,7 @@ class SGLangModel(Model):
         self,
         messages: Messages,
         system_prompt: str | None,
+        tool_specs: list[dict] | None = None,
     ) -> list[int] | None:
         """Tokenize prompt messages for the next generation call.
 
@@ -275,7 +274,7 @@ class SGLangModel(Model):
         """
         # First call: full prompt with tools
         if len(self.token_manager) == 0:
-            formatted = self.format_prompt(messages, system_prompt, tools=self._current_tools)
+            formatted = self.format_prompt(messages, system_prompt, tools=tool_specs)
             return self.tokenizer.encode(formatted, add_special_tokens=False)
 
         # Subsequent calls: only new messages
@@ -366,16 +365,12 @@ class SGLangModel(Model):
         The `stream` method follows Strands' protocol but actually disabled here for training-only usage.
         This means users won't see streaming behavior such as print callbacks.
         """
-        # Format tools (only on first call)
-        if tool_specs and not self._current_tools:
-            self._current_tools = self.format_tool_specs(tool_specs)
-            logger.debug(f"tools formatted: {len(self._current_tools)} tools")
-
         # Prepare request
+        formatted_tools = self.format_tool_specs(tool_specs) if tool_specs else None
         config = self.get_config()
         sampling_params: dict[str, Any] = dict(config.get("sampling_params") or {})
         return_logprob = config.get("return_logprob", True)
-        new_input_tokens = self.tokenize_prompt_messages(messages, system_prompt)
+        new_input_tokens = self.tokenize_prompt_messages(messages, system_prompt, tool_specs=formatted_tools)
         # Tracking token IDs in token_manager to ensure the token-in feature
         input_ids = self.token_manager.token_ids + (new_input_tokens or [])
 

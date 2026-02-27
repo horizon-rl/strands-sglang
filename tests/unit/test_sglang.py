@@ -123,9 +123,9 @@ class TestTokenizePromptMessages:
     def test_first_call_tokenizes_full_prompt(self, model, mock_tokenizer):
         """First call tokenizes full prompt with system and tools."""
         messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-        model._current_tools = [{"type": "function", "function": {"name": "test"}}]
+        tools = [{"type": "function", "function": {"name": "test"}}]
 
-        result = model.tokenize_prompt_messages(messages, system_prompt="Be helpful.")
+        result = model.tokenize_prompt_messages(messages, system_prompt="Be helpful.", tool_specs=tools)
 
         assert result == [1, 2, 3, 4, 5]
         mock_tokenizer.encode.assert_called_once()
@@ -277,13 +277,13 @@ class TestReset:
 
         assert model._processed_message_count == 0
 
-    def test_reset_clears_tools(self, model):
-        """Reset clears current tools."""
-        model._current_tools = [{"type": "function"}]
+    def test_reset_clears_parse_errors(self, model):
+        """Reset clears tool parse error counts."""
+        model.tool_parse_errors = {"broken_tool": 3}
 
         model.reset()
 
-        assert model._current_tools is None
+        assert model.tool_parse_errors == {}
 
 
 class TestConfig:
