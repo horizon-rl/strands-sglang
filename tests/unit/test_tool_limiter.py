@@ -306,14 +306,14 @@ class TestIgnoredMessages:
 
 
 # =============================================================================
-# max_tool_calls_per_turn
+# max_parallel_tool_calls
 # =============================================================================
 
 
-class TestMaxToolCallsPerTurn:
+class TestMaxParallelToolCalls:
     def test_first_n_calls_proceed(self):
         """First N calls within limit should not be cancelled."""
-        limiter = ToolLimiter(max_tool_calls_per_turn=3)
+        limiter = ToolLimiter(max_parallel_tool_calls=3)
         limiter._on_message_added(_assistant_with_tools(3))
         for i in range(3):
             event = _before_tool_call(f"tool-{i}")
@@ -322,7 +322,7 @@ class TestMaxToolCallsPerTurn:
 
     def test_excess_calls_cancelled(self):
         """Calls beyond the limit should be cancelled with error message."""
-        limiter = ToolLimiter(max_tool_calls_per_turn=2)
+        limiter = ToolLimiter(max_parallel_tool_calls=2)
         limiter._on_message_added(_assistant_with_tools(4))
         # First 2 proceed
         for i in range(2):
@@ -333,19 +333,19 @@ class TestMaxToolCallsPerTurn:
         for i in range(2, 4):
             event = _before_tool_call(f"tool-{i}")
             limiter._on_before_tool_call(event)
-            assert "Max tool calls per turn (2) reached" in event.cancel_tool
+            assert "Max parallel tool calls (2) reached" in event.cancel_tool
 
     def test_cancelled_tool_call_count(self):
         """cancelled_tool_call_count should track the number of cancelled calls."""
-        limiter = ToolLimiter(max_tool_calls_per_turn=1)
+        limiter = ToolLimiter(max_parallel_tool_calls=1)
         limiter._on_message_added(_assistant_with_tools(3))
         for i in range(3):
             limiter._on_before_tool_call(_before_tool_call(f"tool-{i}"))
         assert limiter.cancelled_tool_call_count == 2
 
     def test_counter_resets_on_new_turn(self):
-        """Per-turn counter resets when a new assistant message with tools arrives."""
-        limiter = ToolLimiter(max_tool_calls_per_turn=1)
+        """Parallel call counter resets when a new assistant message with tools arrives."""
+        limiter = ToolLimiter(max_parallel_tool_calls=1)
 
         # Turn 1: 1 allowed, 1 cancelled
         limiter._on_message_added(_assistant_with_tools(2))
@@ -366,8 +366,8 @@ class TestMaxToolCallsPerTurn:
         assert event3.cancel_tool is False
 
     def test_none_means_no_limit(self):
-        """max_tool_calls_per_turn=None should never cancel."""
-        limiter = ToolLimiter(max_tool_calls_per_turn=None)
+        """max_parallel_tool_calls=None should never cancel."""
+        limiter = ToolLimiter(max_parallel_tool_calls=None)
         limiter._on_message_added(_assistant_with_tools(100))
         for i in range(100):
             event = _before_tool_call(f"tool-{i}")
@@ -376,18 +376,18 @@ class TestMaxToolCallsPerTurn:
         assert limiter.cancelled_tool_call_count == 0
 
     def test_zero_cancels_all(self):
-        """max_tool_calls_per_turn=0 cancels every tool call."""
-        limiter = ToolLimiter(max_tool_calls_per_turn=0)
+        """max_parallel_tool_calls=0 cancels every tool call."""
+        limiter = ToolLimiter(max_parallel_tool_calls=0)
         limiter._on_message_added(_assistant_with_tools(2))
         for i in range(2):
             event = _before_tool_call(f"tool-{i}")
             limiter._on_before_tool_call(event)
-            assert "Max tool calls per turn (0) reached" in event.cancel_tool
+            assert "Max parallel tool calls (0) reached" in event.cancel_tool
         assert limiter.cancelled_tool_call_count == 2
 
     def test_with_max_tool_iters(self):
         """Per-turn limit works alongside max_tool_iters."""
-        limiter = ToolLimiter(max_tool_iters=2, max_tool_calls_per_turn=1)
+        limiter = ToolLimiter(max_tool_iters=2, max_parallel_tool_calls=1)
 
         # Turn 1: 1 allowed, 1 cancelled
         limiter._on_message_added(_assistant_with_tools(2))
@@ -406,9 +406,9 @@ class TestMaxToolCallsPerTurn:
 
     def test_with_max_tool_calls(self):
         """Per-turn limit works alongside max_tool_calls."""
-        limiter = ToolLimiter(max_tool_calls=4, max_tool_calls_per_turn=2)
+        limiter = ToolLimiter(max_tool_calls=4, max_parallel_tool_calls=2)
 
-        # Turn 1: assistant requests 3, per-turn allows 2, 1 cancelled
+        # Turn 1: assistant requests 3, parallel limit allows 2, 1 cancelled
         # tool_call_count becomes 3 (counted from assistant message)
         limiter._on_message_added(_assistant_with_tools(3))
         for i in range(2):
@@ -427,12 +427,12 @@ class TestMaxToolCallsPerTurn:
 
     def test_init_default_is_none(self):
         limiter = ToolLimiter()
-        assert limiter.max_tool_calls_per_turn is None
+        assert limiter.max_parallel_tool_calls is None
 
-    def test_reset_clears_per_turn_counters(self):
-        limiter = ToolLimiter(max_tool_calls_per_turn=1)
-        limiter._turn_call_count = 5
+    def test_reset_clears_parallel_counters(self):
+        limiter = ToolLimiter(max_parallel_tool_calls=1)
+        limiter._parallel_call_count = 5
         limiter.cancelled_tool_call_count = 3
         limiter.reset()
-        assert limiter._turn_call_count == 0
+        assert limiter._parallel_call_count == 0
         assert limiter.cancelled_tool_call_count == 0
