@@ -12,20 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tool call parser for GLM (ChatGLM) models.
-
-GLM models use an XML key-value format for tool calls instead of the
-JSON format used by Hermes/Qwen models::
-
-    <tool_call>function_name
-    <arg_key>key1</arg_key>
-    <arg_value>value1</arg_value>
-    <arg_key>key2</arg_key>
-    <arg_value>value2</arg_value>
-    </tool_call>
-
-Values are either plain strings or JSON-encoded (for non-string types).
-"""
+"""Tool call parser for GLM (ChatGLM) models."""
 
 from __future__ import annotations
 
