@@ -124,7 +124,7 @@ class TestFormatMessagesRegression:
         assert new[0]["role"] == ref[0]["role"] == "tool"
         assert new[0]["content"] == ref[0]["content"]
 
-    def test_parallel_tool_results(self):
+    def test_parallel_tool_results_separate_messages(self):
         """Multiple tool results from parallel tool calls (each in separate message)."""
         messages = [
             {
@@ -156,6 +156,50 @@ class TestFormatMessagesRegression:
         ref = ref_format_messages(messages)
 
         assert len(new) == len(ref) == 2
+        for n, r in zip(new, ref):
+            assert n["role"] == r["role"] == "tool"
+            assert n["tool_call_id"] == r["tool_call_id"]
+            assert n["content"] == r["content"]
+
+    def test_parallel_tool_results_batched(self):
+        """Multiple tool results batched in one Strands message (real parallel tool call format).
+
+        Strands batches all parallel tool results into a single message:
+        {"role": "user", "content": [{"toolResult": ...}, {"toolResult": ...}, ...]}.
+        Each toolResult must produce its own HF message with role="tool".
+        """
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "toolResult": {
+                            "toolUseId": "call_0",
+                            "status": "success",
+                            "content": [{"text": "Result 0"}],
+                        }
+                    },
+                    {
+                        "toolResult": {
+                            "toolUseId": "call_1",
+                            "status": "success",
+                            "content": [{"text": "Result 1"}],
+                        }
+                    },
+                    {
+                        "toolResult": {
+                            "toolUseId": "call_2",
+                            "status": "success",
+                            "content": [{"text": "Result 2"}],
+                        }
+                    },
+                ],
+            },
+        ]
+        new = SGLangModel.format_messages(messages)
+        ref = ref_format_messages(messages)
+
+        assert len(new) == len(ref) == 3
         for n, r in zip(new, ref):
             assert n["role"] == r["role"] == "tool"
             assert n["tool_call_id"] == r["tool_call_id"]

@@ -84,6 +84,58 @@ class TestFormatTools:
         assert result == []
 
 
+class TestFormatMessages:
+    """Tests for format_messages — especially parallel tool results."""
+
+    def test_parallel_tool_results_all_present(self):
+        """All toolResult blocks in one message must produce separate HF messages."""
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"toolResult": {"toolUseId": "call_0", "status": "success", "content": [{"text": "result 0"}]}},
+                    {"toolResult": {"toolUseId": "call_1", "status": "success", "content": [{"text": "result 1"}]}},
+                    {"toolResult": {"toolUseId": "call_2", "status": "success", "content": [{"text": "result 2"}]}},
+                ],
+            }
+        ]
+        result = SGLangModel.format_messages(messages)
+        tool_msgs = [m for m in result if m["role"] == "tool"]
+        assert len(tool_msgs) == 3
+        assert {m["tool_call_id"] for m in tool_msgs} == {"call_0", "call_1", "call_2"}
+
+    def test_single_tool_result(self):
+        """Single toolResult still works."""
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"toolResult": {"toolUseId": "call_0", "status": "success", "content": [{"text": "ok"}]}},
+                ],
+            }
+        ]
+        result = SGLangModel.format_messages(messages)
+        assert len(result) == 1
+        assert result[0]["role"] == "tool"
+        assert result[0]["content"] == "ok"
+
+    def test_tooluse_skipped(self):
+        """toolUse blocks are skipped — tool calls live in raw text."""
+        messages = [
+            {
+                "role": "assistant",
+                "content": [
+                    {"text": "<tool_call>...</tool_call>"},
+                    {"toolUse": {"toolUseId": "call_0", "name": "fn", "input": {}}},
+                ],
+            }
+        ]
+        result = SGLangModel.format_messages(messages)
+        assert len(result) == 1
+        assert result[0]["role"] == "assistant"
+        assert result[0]["content"] == "<tool_call>...</tool_call>"
+
+
 class TestFormatPrompt:
     """Tests for format_prompt method."""
 
@@ -125,7 +177,7 @@ class TestTokenizePromptMessages:
         messages = [{"role": "user", "content": [{"text": "Hello"}]}]
         tools = [{"type": "function", "function": {"name": "test"}}]
 
-        result = model.tokenize_prompt_messages(messages, system_prompt="Be helpful.", tool_specs=tools)
+        result = model.tokenize_prompt_messages(messages, system_prompt="Be helpful.", tools=tools)
 
         assert result == [1, 2, 3, 4, 5]
         mock_tokenizer.encode.assert_called_once()

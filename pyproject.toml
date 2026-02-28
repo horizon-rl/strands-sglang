@@ -39,6 +39,7 @@ Repository = "https://github.com/horizon-rl/strands-sglang/"
 Issues = "https://github.com/horizon-rl/strands-sglang/issues"
 
 [project.optional-dependencies]
+vision = ["transformers[vision]"]  # also requires torch + torchvision, installed separately
 dev = [
     # Testing
     "pytest>=7.0.0",

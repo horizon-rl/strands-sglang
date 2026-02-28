@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 from .client import DEFAULT_MAX_CONNECTIONS, SGLangClient
 
 if TYPE_CHECKING:
-    from transformers import PreTrainedTokenizer
+    from transformers import PreTrainedTokenizer, ProcessorMixin
 
 
 @lru_cache(maxsize=None)
@@ -83,3 +83,18 @@ def get_tokenizer(tokenizer_path: str) -> PreTrainedTokenizer:
     from transformers import AutoTokenizer
 
     return AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
+
+
+@lru_cache(maxsize=None)
+def get_processor(processor_path: str) -> ProcessorMixin:
+    """Get a shared (cached) multimodal processor.
+
+    Args:
+        processor_path: Path or HuggingFace model ID.
+
+    Returns:
+        Cached processor instance.
+    """
+    from transformers import AutoProcessor
+
+    return AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)

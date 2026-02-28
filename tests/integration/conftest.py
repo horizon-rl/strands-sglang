@@ -25,7 +25,7 @@ The model ID is auto-detected from the server's /get_model_info endpoint.
 
 import httpx
 import pytest
-from transformers import AutoTokenizer
+from transformers import AutoProcessor, AutoTokenizer, ProcessorMixin
 
 from strands_sglang import SGLangModel
 from strands_sglang.client import SGLangClient
@@ -93,6 +93,36 @@ async def model(tokenizer, sglang_base_url):
     yield SGLangModel(
         client=client,
         tokenizer=tokenizer,
+        tool_parser=HermesToolParser(),
+        sampling_params={"max_new_tokens": 32768},
+    )
+    await client.close()
+
+
+@pytest.fixture(scope="module")
+def processor(sglang_server_info):
+    """Load processor for VLM models; None for text-only models."""
+    model_path = sglang_server_info.get("tokenizer_path") or sglang_server_info["model_path"]
+    try:
+        proc = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+    except (ImportError, ValueError):
+        # ImportError: missing torch/torchvision for VLM processors
+        # ValueError: processor config not found for text-only models
+        return None
+    if isinstance(proc, ProcessorMixin):
+        return proc
+    return None
+
+
+@pytest.fixture
+async def vlm_model(processor, sglang_base_url):
+    """Create fresh SGLangModel with processor for VLM tests."""
+    if processor is None:
+        pytest.skip("Server is running a text-only model")
+    client = SGLangClient(base_url=sglang_base_url)
+    yield SGLangModel(
+        client=client,
+        processor=processor,
         tool_parser=HermesToolParser(),
         sampling_params={"max_new_tokens": 32768},
     )

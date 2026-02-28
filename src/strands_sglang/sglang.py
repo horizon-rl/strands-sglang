@@ -59,7 +59,7 @@ from .token import TokenManager
 from .tool_parsers import HermesToolParser, ToolParser, ToolParseResult
 
 if TYPE_CHECKING:
-    from transformers import PreTrainedTokenizerBase
+    from transformers import PreTrainedTokenizerBase, ProcessorMixin
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,8 @@ class SGLangModel(Model):
         self,
         *,
         client: SGLangClient,
-        tokenizer: PreTrainedTokenizerBase,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        processor: ProcessorMixin | None = None,
         tool_parser: ToolParser | None = None,
         **config: Unpack[SGLangConfig],
     ) -> None:
@@ -100,12 +101,17 @@ class SGLangModel(Model):
 
         Args:
             client: `SGLangClient` for HTTP communication with the SGLang server.
-            tokenizer: HuggingFace tokenizer for chat template and tokenization.
+            tokenizer: HuggingFace tokenizer for chat template and tokenization (optional if processor is provided).
+            processor: HuggingFace processor for multimodal processing.
             tool_parser: `ToolParser` for tool calls (default: `HermesToolParser`).
             **config: Additional SGLang generation configuration.
         """
+
         self.client = client
-        self.tokenizer = tokenizer
+        self.processor = processor
+        self.tokenizer = (processor and processor.tokenizer) or tokenizer
+        if not self.tokenizer:
+            raise ValueError("Either tokenizer (text-only) or processor (multimodal) must be provided")
         self.tool_parser = tool_parser or HermesToolParser()
         self.config = dict(config)
 
@@ -113,6 +119,7 @@ class SGLangModel(Model):
         self.token_manager = TokenManager()
         self._processed_message_count: int = 0
         self.tool_parse_errors: dict[str, int] = {}  # per-tool parse error count
+        self.image_data: list[str] = []  # accumulated image data URLs (VLM only)
 
         logger.debug(f"initialized with config: {self.config}")
 
@@ -125,6 +132,12 @@ class SGLangModel(Model):
         self.token_manager.reset()
         self._processed_message_count = 0
         self.tool_parse_errors = {}
+        self.image_data = []
+
+    @property
+    def is_multimodal(self) -> bool:
+        """Whether the model is multimodal."""
+        return self.processor is not None
 
     # -------------------------------------------------------------------------
     # Model interface implementation
@@ -183,39 +196,31 @@ class SGLangModel(Model):
     ) -> list[dict[str, Any]]:
         """Convert Strands Messages to HF chat template format.
 
-        ``toolResult`` messages become ``role: "tool"`` messages.
-        Text-only content is flattened to a plain string.
-        ``toolUse`` blocks are skipped — tool calls live in the raw text
-        and are handled by :class:`ToolParser`.
+        When ``is_multimodal=False`` (default), content is flattened to a plain string.
+        When ``is_multimodal=True``, content is kept as a list of dicts.
         """
         result: list[dict[str, Any]] = []
 
         if system_prompt:
             result.append({"role": "system", "content": system_prompt})
 
+        # Each Strands message is {"role": str, "content": [ContentBlock, ...]}
+        # One Strands message maps to one HF message, except toolResult blocks
+        # which each become a separate HF message with role="tool".
         for msg in messages:
-            first_block = msg["content"][0]
-            tool_result = first_block.get("toolResult")
-            if tool_result:
-                for content_block in tool_result["content"]:
-                    result.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_result["toolUseId"],
-                            "content": cls.format_content_block(content_block, is_multimodal),
-                        }
-                    )
+            if "toolResult" in msg["content"][0]:
+                # Each toolResult → its own HF message (different tool_call_id)
+                for cb in msg["content"]:
+                    assert "toolResult" in cb
+                    tr = cb["toolResult"]
+                    parts = [cls.format_content_block(c, is_multimodal) for c in tr["content"]]
+                    content = parts if is_multimodal else parts[0]
+                    result.append({"role": "tool", "tool_call_id": tr["toolUseId"], "content": content})
             else:
-                for content_block in msg["content"]:
-                    # toolUse blocks are skipped — tool calls live in the raw text
-                    if "toolUse" in content_block:
-                        continue
-                    result.append(
-                        {
-                            "role": msg["role"],
-                            "content": cls.format_content_block(content_block, is_multimodal),
-                        }
-                    )
+                # Non-tool content → one HF message (text, image, etc.; toolUse skipped)
+                content = [cls.format_content_block(cb, is_multimodal) for cb in msg["content"] if "toolUse" not in cb]
+                content = content if is_multimodal else content[0]
+                result.append({"role": msg["role"], "content": content})
 
         return result
 
@@ -247,7 +252,9 @@ class SGLangModel(Model):
         The result is manually tokenized (not model-generated) and added to
         the token trajectory with `loss_mask=False`.
         """
-        chat_messages = self.format_messages(messages, system_prompt)
+        chat_messages = self.format_messages(messages, system_prompt, is_multimodal=self.is_multimodal)
+        self.image_data.extend(self.extract_image_urls(chat_messages))
+        # TODO: add support for other modalities later
         return self.tokenizer.apply_chat_template(
             conversation=chat_messages,
             tools=tools,
@@ -255,6 +262,20 @@ class SGLangModel(Model):
             tokenize=False,
             enable_thinking=self.config.get("enable_thinking"),
         )
+
+    @staticmethod
+    def extract_image_urls(messages: list[dict[str, Any]]) -> list[str]:
+        """Extract image data URLs from HF-formatted multimodal messages."""
+        urls: list[str] = []
+        for msg in messages:
+            content = msg.get("content")
+            if isinstance(content, dict) and content.get("type") == "image":
+                urls.append(content["image"])
+            elif isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "image":
+                        urls.append(part["image"])
+        return urls
 
     # -------------------------------------------------------------------------
     # Generation
@@ -264,25 +285,33 @@ class SGLangModel(Model):
         self,
         messages: Messages,
         system_prompt: str | None,
-        tool_specs: list[dict] | None = None,
+        tools: list[dict] | None = None,
     ) -> list[int] | None:
         """Tokenize prompt messages for the next generation call.
 
         First call: tokenizes full prompt with system prompt and tools.
         Subsequent calls: tokenizes only new messages (tool results, user messages),
         prepending the message separator to align with chat template formatting.
+
+        For VLM (when ``self.processor`` is set), uses the processor to insert
+        image placeholder tokens based on ``self.image_data``.
         """
+
+        def _tokenize(text: str) -> list[int]:
+            if self.processor:
+                return self.processor(text=text, images=self.image_data or None)["input_ids"][0]
+            return self.tokenizer.encode(text, add_special_tokens=False)
+
         # First call: full prompt with tools
         if len(self.token_manager) == 0:
-            formatted = self.format_prompt(messages, system_prompt, tools=tool_specs)
-            return self.tokenizer.encode(formatted, add_special_tokens=False)
+            formatted = self.format_prompt(messages, system_prompt, tools=tools)
+            return _tokenize(formatted)
 
         # Subsequent calls: only new messages
         if len(messages) > self._processed_message_count:
             new_messages = self._sort_tool_results(messages[self._processed_message_count :])
             formatted = self.tool_parser.message_separator + self.format_prompt(new_messages)
-
-            return self.tokenizer.encode(formatted, add_special_tokens=False)
+            return _tokenize(formatted)
 
         return None
 
@@ -366,11 +395,11 @@ class SGLangModel(Model):
         This means users won't see streaming behavior such as print callbacks.
         """
         # Prepare request
-        formatted_tools = self.format_tool_specs(tool_specs) if tool_specs else None
+        tools = self.format_tool_specs(tool_specs) if tool_specs else None
         config = self.get_config()
         sampling_params: dict[str, Any] = dict(config.get("sampling_params") or {})
         return_logprob = config.get("return_logprob", True)
-        new_input_tokens = self.tokenize_prompt_messages(messages, system_prompt, tool_specs=formatted_tools)
+        new_input_tokens = self.tokenize_prompt_messages(messages, system_prompt, tools=tools)
         # Tracking token IDs in token_manager to ensure the token-in feature
         input_ids = self.token_manager.token_ids + (new_input_tokens or [])
 
@@ -385,6 +414,7 @@ class SGLangModel(Model):
                 sampling_params=sampling_params,
                 return_logprob=return_logprob,
                 logprob_start_len=0 if return_logprob else None,
+                image_data=self.image_data or None,
             )
 
             # Extract response data

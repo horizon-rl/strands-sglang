@@ -43,11 +43,11 @@ pytest tests/integration/ -v --sglang-base-url=http://localhost:30000
 
 The package lives in `src/strands_sglang/` with 7 core modules:
 
-**SGLangModel** (`sglang.py`) - Main entry point implementing the Strands `Model` interface. Requires `client` and `tokenizer` (all keyword-only). Formats messages using HuggingFace chat templates (`apply_chat_template()`), calls SGLang's `/generate` endpoint (non-streaming by design for RL throughput), tracks TITO trajectory, and parses tool calls. Configuration via `SGLangConfig` TypedDict (sampling_params, return_logprob, enable_thinking).
+**SGLangModel** (`sglang.py`) - Main entry point implementing the Strands `Model` interface. Requires `client` and either `tokenizer` or `processor` (all keyword-only). Formats messages using HuggingFace chat templates (`apply_chat_template()`), calls SGLang's `/generate` endpoint (non-streaming by design for RL throughput), tracks TITO trajectory, and parses tool calls. When `processor` is provided (VLM mode), uses `processor(text, images)` for tokenization and accumulates `image_data` (base64 data URLs) for SGLang. Configuration via `SGLangConfig` TypedDict (sampling_params, return_logprob, enable_thinking).
 
 **SGLangClient** (`client.py`) - Async HTTP client using aiohttp with connection pooling and aggressive retry (60 attempts by default, aligned with SLIME RL framework). All error classification is centralized in `_classify_http_error()`, which maps HTTP responses to custom exceptions (`SGLangContextLengthError`, `SGLangThrottledError`, etc.). Non-retryable errors: 401, 403, 404, context-length 400. Uses lazy session creation to avoid aiohttp's event-loop warnings.
 
-**Utilities** (`utils.py`) - `lru_cache`-backed factories for shared client and tokenizer instances: `get_client()`, `get_client_from_slime_args()`, `get_tokenizer()`. Ensures connection pooling and tokenizer reuse across RL workers without explicit lifecycle management.
+**Utilities** (`utils.py`) - `lru_cache`-backed factories for shared client and tokenizer instances: `get_client()`, `get_client_from_slime_args()`, `get_tokenizer()`, `get_processor()`. Ensures connection pooling and tokenizer/processor reuse across RL workers without explicit lifecycle management.
 
 **Exceptions** (`exceptions.py`) - Custom exception hierarchy rooted at `SGLangClientError`. HTTP errors are classified into `SGLangHTTPError` (base), `SGLangContextLengthError` (400 + length patterns), and `SGLangThrottledError` (429/503). Connection failures become `SGLangConnectionError`, non-JSON responses become `SGLangDecodingError`. These exceptions form the contract between `client.py` and `sglang.py` — the model layer never inspects raw HTTP status codes.
 
@@ -63,6 +63,7 @@ The package lives in `src/strands_sglang/` with 7 core modules:
 - **Incremental tokenization**: First call tokenizes full prompt; subsequent calls only tokenize new messages (tool results) with message separator prepended
 - **Strict tool parsing for RL**: No heuristic repair of malformed tool calls; errors propagated to model for self-correction
 - **Segment-based TITO**: Token tracking mirrors multi-turn structure (prompt=no loss, response=loss)
+- **VLM via processor**: When `processor` is provided, tokenization switches from `tokenizer.encode(text)` to `processor(text, images)["input_ids"][0]` (unwrapping batch dimension). Images are accumulated as base64 data URLs and forwarded to SGLang's `image_data` parameter. `torch` and `torchvision` are not pinned as dependencies — users install them separately to match their CUDA version
 
 ## Code Style
 
@@ -84,3 +85,17 @@ pytest tests/integration/ -v --sglang-base-url=http://localhost:30000
 ```
 
 Test with both an instruct model (e.g., `Qwen3-4B-Instruct-2507`) and a thinking model (e.g., `Qwen3-8B`) for full coverage. Thinking models will skip `MessageToTokenDrift` tests (expected).
+
+### VLM Integration Tests
+
+VLM tests require an SGLang server running a VLM model (e.g., `Qwen/Qwen3-VL-4B-Instruct`) and `torch` + `torchvision` installed in the test environment. Tests are automatically skipped when:
+- The server is running a text-only model (no `ProcessorMixin` detected)
+- `torch`/`torchvision` are not installed (`AutoProcessor` raises `ImportError`)
+
+```bash
+# Install VLM dependencies in test venv (CPU is sufficient for tokenization)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Run VLM tests specifically
+pytest tests/integration/test_vlm_integration.py -v --sglang-base-url=http://localhost:30000
+```
