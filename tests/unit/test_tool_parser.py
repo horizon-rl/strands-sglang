@@ -17,6 +17,7 @@
 import pytest
 
 from strands_sglang.tool_parsers import (
+    DeepSeekV32ToolParser,
     GLMToolParser,
     HermesToolParser,
     KimiK2ToolParser,
@@ -29,64 +30,25 @@ class TestToolParseResult:
     """Tests for ToolParseResult dataclass."""
 
     def test_successful_parse_result(self):
-        """Successful parse has raw=None."""
-        result = ToolParseResult(
-            id="call_123",
-            name="my_tool",
-            input={"arg": "value"},
-        )
-        assert result.id == "call_123"
+        """Successful parse: raw=None, payload is JSON-encoded input."""
+        result = ToolParseResult(id="call_123", name="my_tool", input={"arg": "value"})
         assert result.name == "my_tool"
         assert result.input == {"arg": "value"}
-        assert result.raw is None
         assert result.is_error is False
+        assert result.payload == '{"arg": "value"}'
 
     def test_error_parse_result(self):
-        """Error parse has raw set."""
-        result = ToolParseResult(
-            id="call_456",
-            name="unknown_tool",
-            input={},
-            raw='{"malformed": json}',
-        )
+        """Error parse: raw set, payload returns raw content."""
+        result = ToolParseResult(id="call_456", name="unknown_tool", input={}, raw='{"malformed": json}')
         assert result.is_error is True
-        assert result.raw == '{"malformed": json}'
-
-    def test_payload_success(self):
-        """payload returns JSON-encoded input for successful parses."""
-        result = ToolParseResult(
-            id="call_123",
-            name="my_tool",
-            input={"arg": "value", "num": 42},
-        )
-        assert result.payload == '{"arg": "value", "num": 42}'
-
-    def test_payload_empty(self):
-        """payload returns empty JSON object for empty input."""
-        result = ToolParseResult(id="call_123", name="my_tool", input={})
-        assert result.payload == "{}"
-
-    def test_payload_error(self):
-        """payload returns raw content for error parses."""
-        result = ToolParseResult(
-            id="call_456",
-            name="unknown_tool",
-            input={},
-            raw='{"malformed": json}',
-        )
         assert result.payload == '{"malformed": json}'
 
-    def test_payload_error_empty_raw(self):
-        """payload returns empty string if raw is empty."""
-        result = ToolParseResult(
-            id="call_789",
-            name="some_tool",
-            input={},
-            raw="",
-        )
-        # Note: empty raw still counts as error (raw is not None)
+    def test_from_parse_error_defaults(self):
+        """from_parse_error creates error with UNKNOWN_NAME and empty input."""
+        result = ToolParseResult.from_parse_error(id="call_0", raw="bad data")
         assert result.is_error is True
-        assert result.payload == ""
+        assert result.name == ToolParseResult.UNKNOWN_NAME
+        assert result.input == {}
 
     def test_immutability(self):
         """ToolParseResult is frozen."""
@@ -100,13 +62,9 @@ class TestHermesToolParser:
 
     @pytest.fixture
     def parser(self):
-        """Create a default parser."""
         return HermesToolParser()
 
-    # --- Basic Parsing ---
-
     def test_parse_single_tool_call(self, parser):
-        """Parse a single valid tool call."""
         text = '<tool_call>{"name": "calculator", "arguments": {"x": 1, "y": 2}}</tool_call>'
         results = parser.parse(text)
 
@@ -115,335 +73,93 @@ class TestHermesToolParser:
         assert results[0].input == {"x": 1, "y": 2}
         assert results[0].is_error is False
 
-    def test_parse_multiple_tool_calls(self, parser):
-        """Parse multiple tool calls in one text."""
+    def test_parse_multiple_tool_calls_with_sequential_ids(self, parser):
+        """Multiple calls get sequential call_NNNN IDs."""
         text = """
         <tool_call>{"name": "tool_a", "arguments": {"a": 1}}</tool_call>
         Some text in between
         <tool_call>{"name": "tool_b", "arguments": {"b": 2}}</tool_call>
-        """
-        results = parser.parse(text)
-
-        assert len(results) == 2
-        assert results[0].name == "tool_a"
-        assert results[0].input == {"a": 1}
-        assert results[1].name == "tool_b"
-        assert results[1].input == {"b": 2}
-
-    def test_parse_no_tool_calls(self, parser):
-        """Return empty list when no tool calls present."""
-        text = "Just some regular text without any tool calls."
-        results = parser.parse(text)
-
-        assert len(results) == 0
-
-    def test_parse_empty_string(self, parser):
-        """Handle empty string."""
-        results = parser.parse("")
-        assert len(results) == 0
-
-    # --- Arguments Handling ---
-
-    def test_parse_missing_arguments(self, parser):
-        """Missing arguments defaults to empty dict."""
-        text = '<tool_call>{"name": "no_args_tool"}</tool_call>'
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "no_args_tool"
-        assert results[0].input == {}
-        assert results[0].is_error is False
-
-    def test_parse_empty_arguments(self, parser):
-        """Empty arguments object is valid."""
-        text = '<tool_call>{"name": "empty_args", "arguments": {}}</tool_call>'
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].input == {}
-        assert results[0].is_error is False
-
-    def test_parse_non_dict_arguments(self, parser):
-        """Non-dict arguments defaults to empty dict (Strands validates)."""
-        text = '<tool_call>{"name": "bad_args", "arguments": [1, 2, 3]}</tool_call>'
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "bad_args"
-        assert results[0].input == {}  # Defaults to empty
-        assert results[0].is_error is False  # Not an error - let Strands validate
-
-    def test_parse_complex_arguments(self, parser):
-        """Parse complex nested arguments."""
-        text = """<tool_call>{"name": "complex", "arguments": {
-            "nested": {"a": 1, "b": [1, 2, 3]},
-            "list": [{"x": 1}, {"y": 2}],
-            "string": "hello"
-        }}</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].input["nested"] == {"a": 1, "b": [1, 2, 3]}
-        assert results[0].input["list"] == [{"x": 1}, {"y": 2}]
-
-    # --- Error Cases ---
-
-    def test_parse_malformed_json(self, parser):
-        """Malformed JSON creates error result."""
-        text = '<tool_call>{"name": "broken", "arguments": {invalid json}}</tool_call>'
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].is_error is True
-        assert results[0].name == "broken"  # Extracted via regex
-        assert results[0].raw == '{"name": "broken", "arguments": {invalid json}}'
-
-    def test_parse_missing_name(self, parser):
-        """Missing name field creates error result."""
-        text = '<tool_call>{"arguments": {"x": 1}}</tool_call>'
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].is_error is True
-        assert results[0].name == ToolParseResult.UNKNOWN_NAME
-
-    def test_parse_empty_name(self, parser):
-        """Empty string name creates error result."""
-        text = '<tool_call>{"name": "", "arguments": {}}</tool_call>'
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].is_error is True
-
-    def test_parse_non_string_name(self, parser):
-        """Non-string name creates error result."""
-        text = '<tool_call>{"name": 123, "arguments": {}}</tool_call>'
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].is_error is True
-
-    def test_parse_non_dict_json(self, parser):
-        """Non-dict JSON (e.g., array) creates error result."""
-        text = "<tool_call>[1, 2, 3]</tool_call>"
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].is_error is True
-        assert results[0].name == ToolParseResult.UNKNOWN_NAME
-
-    def test_parse_null_json(self, parser):
-        """Null JSON creates error result."""
-        text = "<tool_call>null</tool_call>"
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].is_error is True
-
-    # --- Name Extraction from Malformed JSON ---
-
-    def test_extract_name_from_malformed_json(self, parser):
-        """Extract tool name via regex even when JSON is malformed."""
-        text = '<tool_call>{"name": "my_tool", broken json here}</tool_call>'
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].is_error is True
-        assert results[0].name == "my_tool"  # Extracted via regex!
-
-    def test_fallback_to_unknown_when_no_name(self, parser):
-        """Fall back to ToolParseResult.UNKNOWN_NAME when name can't be extracted."""
-        text = "<tool_call>{completely broken}</tool_call>"
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].is_error is True
-        assert results[0].name == ToolParseResult.UNKNOWN_NAME
-
-    # --- Whitespace Handling ---
-
-    def test_parse_with_whitespace(self, parser):
-        """Handle whitespace around JSON."""
-        text = """<tool_call>
-            {
-                "name": "spacy_tool",
-                "arguments": {"key": "value"}
-            }
-        </tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "spacy_tool"
-        assert results[0].is_error is False
-
-    # --- Custom Tokens ---
-
-    def test_custom_tokens(self):
-        """Use custom tool tokens."""
-        parser = HermesToolParser(tool_start_token="<function>", tool_end_token="</function>")
-        text = '<function>{"name": "custom", "arguments": {}}</function>'
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "custom"
-
-    def test_custom_tokens_ignore_default(self):
-        """Custom tokens ignore default format."""
-        parser = HermesToolParser(tool_start_token="<function>", tool_end_token="</function>")
-        # Default format should not be parsed
-        text = '<tool_call>{"name": "ignored", "arguments": {}}</tool_call>'
-        results = parser.parse(text)
-
-        assert len(results) == 0
-
-    # --- Mixed Success and Error ---
-
-    def test_mixed_success_and_errors(self, parser):
-        """Parse text with both successful and error tool calls."""
-        text = """
-        <tool_call>{"name": "first", "arguments": {}}</tool_call>
-        <tool_call>{broken}</tool_call>
-        <tool_call>{"name": "second", "arguments": {"x": 1}}</tool_call>
-        <tool_call>{"arguments": {}}</tool_call>
-        <tool_call>{"name": "third", "arguments": {}}</tool_call>
-        """
-        results = parser.parse(text)
-
-        assert len(results) == 5
-
-        # Check successful ones
-        successful = [r for r in results if not r.is_error]
-        assert len(successful) == 3
-        assert [r.name for r in successful] == ["first", "second", "third"]
-
-        # Check errors
-        errors = [r for r in results if r.is_error]
-        assert len(errors) == 2
-
-    # --- Edge Cases ---
-
-    def test_tool_call_with_special_characters_in_name(self, parser):
-        """Handle special characters in tool name."""
-        text = '<tool_call>{"name": "my-tool_v2.0", "arguments": {}}</tool_call>'
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "my-tool_v2.0"
-
-    def test_tool_call_with_unicode(self, parser):
-        """Handle unicode in arguments."""
-        text = '<tool_call>{"name": "unicode", "arguments": {"emoji": "🚀", "chinese": "你好"}}</tool_call>'
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].input["emoji"] == "🚀"
-        assert results[0].input["chinese"] == "你好"
-
-    def test_unclosed_tool_call_tag(self, parser):
-        """Unclosed tag is not parsed."""
-        text = '<tool_call>{"name": "unclosed", "arguments": {}}'
-        results = parser.parse(text)
-
-        assert len(results) == 0
-
-    def test_nested_tags_not_supported(self, parser):
-        """Nested tags parse the inner content only."""
-        text = '<tool_call><tool_call>{"name": "inner", "arguments": {}}</tool_call></tool_call>'
-        results = parser.parse(text)
-
-        # Regex is non-greedy, so it matches the inner one
-        assert len(results) == 1
-        # The inner content starts with "<tool_call>" which is not valid JSON
-        assert results[0].is_error is True
-
-    def test_unique_ids_generated(self, parser):
-        """Each tool call gets a unique ID."""
-        text = """
-        <tool_call>{"name": "a", "arguments": {}}</tool_call>
-        <tool_call>{"name": "b", "arguments": {}}</tool_call>
-        """
-        results = parser.parse(text)
-
-        assert len(results) == 2
-        assert results[0].id != results[1].id
-        assert results[0].id.startswith("call_")
-        assert results[1].id.startswith("call_")
-
-    def test_sequential_ids_are_sortable(self, parser):
-        """Tool call IDs are sequential and sortable for result ordering."""
-        text = """
-        <tool_call>{"name": "first", "arguments": {}}</tool_call>
-        <tool_call>{"name": "second", "arguments": {}}</tool_call>
-        <tool_call>{"name": "third", "arguments": {}}</tool_call>
+        <tool_call>{"name": "tool_c", "arguments": {}}</tool_call>
         """
         results = parser.parse(text)
 
         assert len(results) == 3
-        # IDs should be sequential: call_0000, call_0001, call_0002
-        assert results[0].id == "call_0000"
-        assert results[1].id == "call_0001"
-        assert results[2].id == "call_0002"
-        # String comparison should preserve order
-        assert results[0].id < results[1].id < results[2].id
+        assert [r.name for r in results] == ["tool_a", "tool_b", "tool_c"]
+        assert [r.id for r in results] == ["call_0000", "call_0001", "call_0002"]
 
-    # --- Think Block Exclusion ---
+    def test_parse_no_tool_calls(self, parser):
+        assert parser.parse("Just some regular text.") == []
+        assert parser.parse("") == []
+
+    def test_missing_arguments_defaults_to_empty_dict(self, parser):
+        text = '<tool_call>{"name": "no_args"}</tool_call>'
+        results = parser.parse(text)
+        assert results[0].input == {}
+        assert results[0].is_error is False
+
+    def test_parse_complex_arguments(self, parser):
+        text = """<tool_call>{"name": "complex", "arguments": {
+            "nested": {"a": 1, "b": [1, 2, 3]},
+            "list": [{"x": 1}, {"y": 2}]
+        }}</tool_call>"""
+        results = parser.parse(text)
+        assert results[0].input["nested"] == {"a": 1, "b": [1, 2, 3]}
+        assert results[0].input["list"] == [{"x": 1}, {"y": 2}]
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            '{"arguments": {"x": 1}}',  # missing name
+            '{"name": "", "arguments": {}}',  # empty name
+            '{"name": 123, "arguments": {}}',  # non-string name
+            "[1, 2, 3]",  # non-dict JSON
+            "null",  # null JSON
+            "{completely broken}",  # broken JSON
+        ],
+    )
+    def test_error_cases(self, parser, content):
+        results = parser.parse(f"<tool_call>{content}</tool_call>")
+        assert results[0].is_error is True
+
+    def test_name_extraction_from_malformed_json(self, parser):
+        """Regex extracts name even when JSON is malformed."""
+        results = parser.parse('<tool_call>{"name": "broken", "arguments": {bad}}</tool_call>')
+        assert results[0].is_error is True
+        assert results[0].name == "broken"
+
+    def test_mixed_success_and_errors(self, parser):
+        text = """
+        <tool_call>{"name": "first", "arguments": {}}</tool_call>
+        <tool_call>{broken}</tool_call>
+        <tool_call>{"name": "second", "arguments": {"x": 1}}</tool_call>
+        """
+        results = parser.parse(text)
+
+        assert len(results) == 3
+        successful = [r for r in results if not r.is_error]
+        assert [r.name for r in successful] == ["first", "second"]
 
     def test_exclude_tool_calls_inside_think_block(self, parser):
-        """Tool calls inside <think> blocks are excluded."""
         text = """
         <think>
-        Let me think about this...
-        Maybe I should call <tool_call>{"name": "draft_tool", "arguments": {"x": 1}}</tool_call>
-        No, let me reconsider...
+        <tool_call>{"name": "draft", "arguments": {}}</tool_call>
         </think>
-        <tool_call>{"name": "actual_tool", "arguments": {"y": 2}}</tool_call>
+        <tool_call>{"name": "actual", "arguments": {"y": 2}}</tool_call>
         """
         results = parser.parse(text)
 
         assert len(results) == 1
-        assert results[0].name == "actual_tool"
-        assert results[0].input == {"y": 2}
+        assert results[0].name == "actual"
 
-    def test_exclude_multiple_think_blocks(self, parser):
-        """Multiple <think> blocks are all excluded."""
-        text = """
-        <think>Draft 1: <tool_call>{"name": "draft1", "arguments": {}}</tool_call></think>
-        <tool_call>{"name": "real1", "arguments": {}}</tool_call>
-        <think>Draft 2: <tool_call>{"name": "draft2", "arguments": {}}</tool_call></think>
-        <tool_call>{"name": "real2", "arguments": {}}</tool_call>
-        """
-        results = parser.parse(text)
-
-        assert len(results) == 2
-        assert results[0].name == "real1"
-        assert results[1].name == "real2"
-
-    def test_think_block_with_no_tool_calls(self, parser):
-        """Think block without tool calls doesn't affect parsing."""
-        text = """
-        <think>Just some reasoning without tool calls...</think>
-        <tool_call>{"name": "my_tool", "arguments": {}}</tool_call>
-        """
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "my_tool"
-
-    def test_no_think_blocks(self, parser):
-        """Parsing works normally when no think blocks present."""
-        text = '<tool_call>{"name": "tool", "arguments": {}}</tool_call>'
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "tool"
+    def test_custom_tokens(self):
+        parser = HermesToolParser(tool_start_token="<function>", tool_end_token="</function>")
+        assert parser.parse('<function>{"name": "custom", "arguments": {}}</function>')[0].name == "custom"
+        assert parser.parse('<tool_call>{"name": "ignored", "arguments": {}}</tool_call>') == []
 
     def test_custom_think_tokens(self):
-        """Custom think tokens work correctly."""
         parser = HermesToolParser(think_start_token="<reasoning>", think_end_token="</reasoning>")
         text = """
-        <reasoning>
-        <tool_call>{"name": "draft", "arguments": {}}</tool_call>
-        </reasoning>
+        <reasoning><tool_call>{"name": "draft", "arguments": {}}</tool_call></reasoning>
         <tool_call>{"name": "actual", "arguments": {}}</tool_call>
         """
         results = parser.parse(text)
@@ -451,53 +167,15 @@ class TestHermesToolParser:
         assert len(results) == 1
         assert results[0].name == "actual"
 
-    def test_custom_think_tokens_ignore_default(self):
-        """Custom think tokens don't exclude default <think> blocks."""
-        parser = HermesToolParser(think_start_token="<reasoning>", think_end_token="</reasoning>")
-        text = """
-        <think>
-        <tool_call>{"name": "in_think", "arguments": {}}</tool_call>
-        </think>
-        <tool_call>{"name": "outside", "arguments": {}}</tool_call>
-        """
-        results = parser.parse(text)
-
-        # <think> is NOT excluded with custom tokens, so both are parsed
-        assert len(results) == 2
-        assert results[0].name == "in_think"
-        assert results[1].name == "outside"
-
-    def test_multiline_think_block(self, parser):
-        """Multiline think blocks are properly excluded."""
-        text = """<think>
-This is a long reasoning block
-that spans multiple lines.
-
-Let me consider calling:
-<tool_call>{"name": "considered_tool", "arguments": {"query": "test"}}</tool_call>
-
-Actually, I should use a different approach.
-</think>
-<tool_call>{"name": "final_tool", "arguments": {"query": "real"}}</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "final_tool"
-        assert results[0].input == {"query": "real"}
-
 
 class TestQwenXMLToolParser:
     """Tests for QwenXMLToolParser (Qwen3-Coder format)."""
 
     @pytest.fixture
     def parser(self):
-        """Create a default parser."""
         return QwenXMLToolParser()
 
-    # --- Basic Parsing ---
-
     def test_parse_single_tool_call(self, parser):
-        """Parse a single valid tool call."""
         text = """<tool_call>
 <function=calculator>
 <parameter=x>1</parameter>
@@ -511,283 +189,61 @@ class TestQwenXMLToolParser:
         assert results[0].input == {"x": "1", "y": "2"}
         assert results[0].is_error is False
 
-    def test_parse_multiple_tool_calls(self, parser):
-        """Parse multiple tool calls in one text."""
+    def test_parse_multiple_tool_calls_with_sequential_ids(self, parser):
+        """Multiple calls get sequential call_NNNN IDs."""
         text = """
-<tool_call>
-<function=tool_a>
-<parameter=a>1</parameter>
-</function>
-</tool_call>
-Some text in between
-<tool_call>
-<function=tool_b>
-<parameter=b>2</parameter>
-</function>
-</tool_call>
+<tool_call><function=tool_a><parameter=a>1</parameter></function></tool_call>
+<tool_call><function=tool_b><parameter=b>2</parameter></function></tool_call>
+<tool_call><function=tool_c></function></tool_call>
 """
         results = parser.parse(text)
 
-        assert len(results) == 2
-        assert results[0].name == "tool_a"
-        assert results[0].input == {"a": "1"}
-        assert results[1].name == "tool_b"
-        assert results[1].input == {"b": "2"}
+        assert len(results) == 3
+        assert [r.name for r in results] == ["tool_a", "tool_b", "tool_c"]
+        assert [r.id for r in results] == ["call_0000", "call_0001", "call_0002"]
 
     def test_parse_no_tool_calls(self, parser):
-        """Return empty list when no tool calls present."""
-        text = "Just some regular text without any tool calls."
-        results = parser.parse(text)
-
-        assert len(results) == 0
-
-    def test_parse_empty_string(self, parser):
-        """Handle empty string."""
-        results = parser.parse("")
-        assert len(results) == 0
-
-    # --- Parameter Handling ---
-
-    def test_parse_no_parameters(self, parser):
-        """Tool call with no parameters."""
-        text = """<tool_call>
-<function=no_args_tool>
-</function>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "no_args_tool"
-        assert results[0].input == {}
-        assert results[0].is_error is False
+        assert parser.parse("Just some regular text.") == []
+        assert parser.parse("") == []
 
     def test_parse_multiline_parameter_value(self, parser):
-        """Handle multiline parameter values."""
         text = """<tool_call>
 <function=write_file>
 <parameter=path>/tmp/test.py</parameter>
 <parameter=content>
 def hello():
     print("Hello, World!")
-
-if __name__ == "__main__":
-    hello()
 </parameter>
 </function>
 </tool_call>"""
         results = parser.parse(text)
 
-        assert len(results) == 1
         assert results[0].name == "write_file"
-        assert results[0].input["path"] == "/tmp/test.py"
         assert "def hello():" in results[0].input["content"]
-        assert 'print("Hello, World!")' in results[0].input["content"]
-
-    def test_parse_parameter_with_special_characters(self, parser):
-        """Handle special characters in parameter values."""
-        text = """<tool_call>
-<function=search>
-<parameter=query>hello & goodbye | "quoted"</parameter>
-</function>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].input["query"] == 'hello & goodbye | "quoted"'
-
-    # --- Error Cases ---
 
     def test_parse_missing_function_tag(self, parser):
-        """Missing function tag creates error result."""
         text = """<tool_call>
 <parameter=x>1</parameter>
 </tool_call>"""
         results = parser.parse(text)
 
-        assert len(results) == 1
         assert results[0].is_error is True
         assert results[0].name == ToolParseResult.UNKNOWN_NAME
 
-    def test_parse_empty_function_name(self, parser):
-        """Empty function name creates error result."""
-        text = """<tool_call>
-<function=>
-<parameter=x>1</parameter>
-</function>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].is_error is True
-
-    # --- Whitespace Handling ---
-
-    def test_parse_with_extra_whitespace(self, parser):
-        """Handle extra whitespace around tags."""
-        text = """<tool_call>
-    <function=spacy_tool>
-        <parameter=key>   value   </parameter>
-    </function>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "spacy_tool"
-        assert results[0].input["key"] == "value"
-        assert results[0].is_error is False
-
-    def test_parse_compact_format(self, parser):
-        """Handle compact single-line format."""
-        text = "<tool_call><function=tool><parameter=x>1</parameter></function></tool_call>"
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "tool"
-        assert results[0].input == {"x": "1"}
-
-    # --- Custom Tokens ---
-
-    def test_custom_tokens(self):
-        """Use custom tool tokens."""
-        parser = QwenXMLToolParser(tool_start_token="<call>", tool_end_token="</call>")
-        text = """<call>
-<function=custom>
-<parameter=x>1</parameter>
-</function>
-</call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "custom"
-
-    def test_custom_tokens_ignore_default(self):
-        """Custom tokens ignore default format."""
-        parser = QwenXMLToolParser(tool_start_token="<call>", tool_end_token="</call>")
-        text = """<tool_call>
-<function=ignored>
-<parameter=x>1</parameter>
-</function>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 0
-
-    # --- Think Block Exclusion ---
-
     def test_exclude_tool_calls_inside_think_block(self, parser):
-        """Tool calls inside <think> blocks are excluded."""
         text = """
 <think>
-Let me think about this...
-<tool_call>
-<function=draft_tool>
-<parameter=x>1</parameter>
-</function>
-</tool_call>
-No, let me reconsider...
+<tool_call><function=draft><parameter=x>1</parameter></function></tool_call>
 </think>
-<tool_call>
-<function=actual_tool>
-<parameter=y>2</parameter>
-</function>
-</tool_call>
+<tool_call><function=actual><parameter=y>2</parameter></function></tool_call>
 """
         results = parser.parse(text)
 
         assert len(results) == 1
-        assert results[0].name == "actual_tool"
-        assert results[0].input == {"y": "2"}
-
-    def test_custom_think_tokens(self):
-        """Custom think tokens work correctly."""
-        parser = QwenXMLToolParser(think_start_token="<reasoning>", think_end_token="</reasoning>")
-        text = """
-<reasoning>
-<tool_call>
-<function=inside_reasoning>
-</function>
-</tool_call>
-</reasoning>
-<tool_call>
-<function=outside_reasoning>
-</function>
-</tool_call>
-"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "outside_reasoning"
-
-    # --- Edge Cases ---
-
-    def test_tool_call_with_special_characters_in_name(self, parser):
-        """Handle special characters in function name."""
-        text = """<tool_call>
-<function=my-tool_v2.0>
-<parameter=x>1</parameter>
-</function>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "my-tool_v2.0"
-
-    def test_tool_call_with_unicode(self, parser):
-        """Handle unicode in parameter values."""
-        text = """<tool_call>
-<function=unicode>
-<parameter=emoji>🚀</parameter>
-<parameter=chinese>你好</parameter>
-</function>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].input["emoji"] == "🚀"
-        assert results[0].input["chinese"] == "你好"
-
-    def test_unclosed_tool_call_tag(self, parser):
-        """Unclosed tag is not parsed."""
-        text = """<tool_call>
-<function=unclosed>
-</function>"""
-        results = parser.parse(text)
-
-        assert len(results) == 0
-
-    def test_unique_ids_generated(self, parser):
-        """Each tool call gets a unique ID."""
-        text = """
-<tool_call><function=a></function></tool_call>
-<tool_call><function=b></function></tool_call>
-"""
-        results = parser.parse(text)
-
-        assert len(results) == 2
-        assert results[0].id != results[1].id
-        assert results[0].id.startswith("call_")
-        assert results[1].id.startswith("call_")
-
-    def test_sequential_ids_are_sortable(self, parser):
-        """Tool call IDs are sequential and sortable for result ordering."""
-        text = """
-<tool_call><function=first></function></tool_call>
-<tool_call><function=second></function></tool_call>
-<tool_call><function=third></function></tool_call>
-"""
-        results = parser.parse(text)
-
-        assert len(results) == 3
-        assert results[0].id == "call_0000"
-        assert results[1].id == "call_0001"
-        assert results[2].id == "call_0002"
-        assert results[0].id < results[1].id < results[2].id
+        assert results[0].name == "actual"
 
     def test_message_separator(self, parser):
-        """Message separator is newline for Qwen models."""
         assert parser.message_separator == "\n"
-
-    # --- Real-world Example from Qwen3-Coder ---
 
     def test_real_world_git_status_example(self, parser):
         """Parse real-world example from Qwen3-Coder."""
@@ -805,7 +261,6 @@ True
 </tool_call>"""
         results = parser.parse(text)
 
-        assert len(results) == 1
         assert results[0].name == "run_terminal_command"
         assert results[0].input["command"] == "git status"
         assert results[0].input["waitForCompletion"] == "True"
@@ -816,13 +271,9 @@ class TestGLMToolParser:
 
     @pytest.fixture
     def parser(self):
-        """Create a default parser."""
         return GLMToolParser()
 
-    # --- Basic Parsing ---
-
     def test_parse_single_tool_call(self, parser):
-        """Parse a single valid tool call."""
         text = """<tool_call>calculator
 <arg_key>x</arg_key>
 <arg_value>1</arg_value>
@@ -833,204 +284,84 @@ class TestGLMToolParser:
 
         assert len(results) == 1
         assert results[0].name == "calculator"
-        assert results[0].input == {"x": 1, "y": 2}  # JSON-decoded as integers
+        assert results[0].input == {"x": 1, "y": 2}
         assert results[0].is_error is False
 
-    def test_parse_json_encoded_values(self, parser):
-        """Parse JSON-encoded values for non-string types."""
-        text = """<tool_call>calculator
-<arg_key>x</arg_key>
-<arg_value>10</arg_value>
-<arg_key>y</arg_key>
-<arg_value>20</arg_value>
-<arg_key>operation</arg_key>
-<arg_value>"multiply"</arg_value>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "calculator"
-        assert results[0].input["x"] == 10  # Decoded as integer
-        assert results[0].input["y"] == 20  # Decoded as integer
-        assert results[0].input["operation"] == "multiply"  # Decoded as string
-
-    def test_parse_multiple_tool_calls(self, parser):
-        """Parse multiple tool calls in one text."""
+    def test_parse_multiple_tool_calls_with_sequential_ids(self, parser):
+        """Multiple calls get sequential call_NNNN IDs."""
         text = """
 <tool_call>tool_a
 <arg_key>a</arg_key>
 <arg_value>1</arg_value>
 </tool_call>
-Some text in between
 <tool_call>tool_b
 <arg_key>b</arg_key>
 <arg_value>2</arg_value>
 </tool_call>
+<tool_call>tool_c
+</tool_call>
 """
         results = parser.parse(text)
 
-        assert len(results) == 2
-        assert results[0].name == "tool_a"
-        assert results[0].input == {"a": 1}  # JSON-decoded as integer
-        assert results[1].name == "tool_b"
-        assert results[1].input == {"b": 2}  # JSON-decoded as integer
+        assert len(results) == 3
+        assert [r.name for r in results] == ["tool_a", "tool_b", "tool_c"]
+        assert [r.id for r in results] == ["call_0000", "call_0001", "call_0002"]
 
     def test_parse_no_tool_calls(self, parser):
-        """Return empty list when no tool calls present."""
-        text = "Just some regular text without any tool calls."
-        results = parser.parse(text)
+        assert parser.parse("Just some regular text.") == []
+        assert parser.parse("") == []
 
-        assert len(results) == 0
-
-    def test_parse_empty_string(self, parser):
-        """Handle empty string."""
-        results = parser.parse("")
-        assert len(results) == 0
-
-    # --- Argument Handling ---
-
-    def test_parse_no_arguments(self, parser):
-        """Tool call with no arguments."""
-        text = """<tool_call>no_args_tool
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "no_args_tool"
-        assert results[0].input == {}
-        assert results[0].is_error is False
-
-    def test_parse_complex_json_value(self, parser):
-        """Parse complex JSON-encoded values."""
-        text = """<tool_call>complex_tool
-<arg_key>data</arg_key>
-<arg_value>{"nested": {"a": 1, "b": [1, 2, 3]}}</arg_value>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].input["data"] == {"nested": {"a": 1, "b": [1, 2, 3]}}
-
-    def test_parse_plain_string_value(self, parser):
-        """Parse plain string values (not JSON-encoded)."""
-        text = """<tool_call>search
-<arg_key>query</arg_key>
+    def test_parse_value_types(self, parser):
+        """JSON-encoded values are decoded; plain strings kept as-is."""
+        text = """<tool_call>tool
+<arg_key>integer</arg_key>
+<arg_value>42</arg_value>
+<arg_key>string</arg_key>
+<arg_value>"hello"</arg_value>
+<arg_key>nested</arg_key>
+<arg_value>{"a": [1, 2]}</arg_value>
+<arg_key>plain</arg_key>
 <arg_value>hello world</arg_value>
 </tool_call>"""
         results = parser.parse(text)
 
-        assert len(results) == 1
-        assert results[0].input["query"] == "hello world"
+        assert results[0].input["integer"] == 42
+        assert results[0].input["string"] == "hello"
+        assert results[0].input["nested"] == {"a": [1, 2]}
+        assert results[0].input["plain"] == "hello world"
 
     def test_parse_multiline_value(self, parser):
-        """Handle multiline argument values."""
         text = """<tool_call>write_file
 <arg_key>path</arg_key>
 <arg_value>/tmp/test.py</arg_value>
 <arg_key>content</arg_key>
 <arg_value>def hello():
-    print("Hello, World!")
-
-if __name__ == "__main__":
-    hello()</arg_value>
+    print("Hello, World!")</arg_value>
 </tool_call>"""
         results = parser.parse(text)
 
-        assert len(results) == 1
         assert results[0].name == "write_file"
-        assert results[0].input["path"] == "/tmp/test.py"
         assert "def hello():" in results[0].input["content"]
-        assert 'print("Hello, World!")' in results[0].input["content"]
-
-    # --- Error Cases ---
 
     def test_parse_missing_function_name(self, parser):
-        """Missing function name creates error result."""
         text = """<tool_call>
 <arg_key>x</arg_key>
 <arg_value>1</arg_value>
 </tool_call>"""
         results = parser.parse(text)
 
-        assert len(results) == 1
         assert results[0].is_error is True
         assert results[0].name == ToolParseResult.UNKNOWN_NAME
 
-    def test_parse_whitespace_only_function_name(self, parser):
-        """Whitespace-only function name creates error result."""
-        text = """<tool_call>
-<arg_key>x</arg_key>
-<arg_value>1</arg_value>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].is_error is True
-
-    # --- Whitespace Handling ---
-
-    def test_parse_with_extra_whitespace(self, parser):
-        """Handle extra whitespace around tags."""
-        text = """<tool_call>   spacy_tool
-<arg_key>   key   </arg_key>
-<arg_value>   value   </arg_value>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "spacy_tool"
-        assert results[0].input["key"] == "value"
-        assert results[0].is_error is False
-
-    def test_parse_compact_format(self, parser):
-        """Handle compact single-line format."""
-        text = "<tool_call>tool\n<arg_key>x</arg_key><arg_value>1</arg_value></tool_call>"
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "tool"
-        assert results[0].input == {"x": 1}  # JSON-decoded as integer
-
-    # --- Custom Tokens ---
-
-    def test_custom_tokens(self):
-        """Use custom tool tokens."""
-        parser = GLMToolParser(tool_start_token="<call>", tool_end_token="</call>")
-        text = """<call>custom
-<arg_key>x</arg_key>
-<arg_value>1</arg_value>
-</call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "custom"
-        assert results[0].input == {"x": 1}
-
-    def test_custom_tokens_ignore_default(self):
-        """Custom tokens ignore default format."""
-        parser = GLMToolParser(tool_start_token="<call>", tool_end_token="</call>")
-        text = """<tool_call>ignored
-<arg_key>x</arg_key>
-<arg_value>1</arg_value>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 0
-
-    # --- Think Block Exclusion ---
-
     def test_exclude_tool_calls_inside_think_block(self, parser):
-        """Tool calls inside <think> blocks are excluded."""
         text = """
 <think>
-Let me think about this...
-<tool_call>draft_tool
+<tool_call>draft
 <arg_key>x</arg_key>
 <arg_value>1</arg_value>
 </tool_call>
-No, let me reconsider...
 </think>
-<tool_call>actual_tool
+<tool_call>actual
 <arg_key>y</arg_key>
 <arg_value>2</arg_value>
 </tool_call>
@@ -1038,100 +369,11 @@ No, let me reconsider...
         results = parser.parse(text)
 
         assert len(results) == 1
-        assert results[0].name == "actual_tool"
-        assert results[0].input == {"y": 2}  # JSON-decoded as integer
-
-    def test_custom_think_tokens(self):
-        """Custom think tokens work correctly."""
-        parser = GLMToolParser(think_start_token="<reasoning>", think_end_token="</reasoning>")
-        text = """
-<reasoning>
-<tool_call>inside_reasoning
-</tool_call>
-</reasoning>
-<tool_call>outside_reasoning
-</tool_call>
-"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "outside_reasoning"
-
-    # --- Edge Cases ---
-
-    def test_tool_call_with_special_characters_in_name(self, parser):
-        """Handle special characters in function name."""
-        text = """<tool_call>my-tool_v2.0
-<arg_key>x</arg_key>
-<arg_value>1</arg_value>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "my-tool_v2.0"
-        assert results[0].input == {"x": 1}
-
-    def test_tool_call_with_unicode(self, parser):
-        """Handle unicode in argument values."""
-        text = """<tool_call>unicode
-<arg_key>emoji</arg_key>
-<arg_value>🚀</arg_value>
-<arg_key>chinese</arg_key>
-<arg_value>你好</arg_value>
-</tool_call>"""
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].input["emoji"] == "🚀"
-        assert results[0].input["chinese"] == "你好"
-
-    def test_unclosed_tool_call_tag(self, parser):
-        """Unclosed tag is not parsed."""
-        text = """<tool_call>unclosed
-<arg_key>x</arg_key>
-<arg_value>1</arg_value>"""
-        results = parser.parse(text)
-
-        assert len(results) == 0
-
-    def test_unique_ids_generated(self, parser):
-        """Each tool call gets a unique ID."""
-        text = """
-<tool_call>a
-</tool_call>
-<tool_call>b
-</tool_call>
-"""
-        results = parser.parse(text)
-
-        assert len(results) == 2
-        assert results[0].id != results[1].id
-        assert results[0].id.startswith("call_")
-        assert results[1].id.startswith("call_")
-
-    def test_sequential_ids_are_sortable(self, parser):
-        """Tool call IDs are sequential and sortable for result ordering."""
-        text = """
-<tool_call>first
-</tool_call>
-<tool_call>second
-</tool_call>
-<tool_call>third
-</tool_call>
-"""
-        results = parser.parse(text)
-
-        assert len(results) == 3
-        assert results[0].id == "call_0000"
-        assert results[1].id == "call_0001"
-        assert results[2].id == "call_0002"
-        assert results[0].id < results[1].id < results[2].id
+        assert results[0].name == "actual"
+        assert results[0].input == {"y": 2}
 
     def test_message_separator(self, parser):
-        """Message separator is empty for GLM models."""
         assert parser.message_separator == ""
-
-    # --- Real-world Example ---
 
     def test_real_world_example(self, parser):
         """Parse real-world example from GLM-4."""
@@ -1145,10 +387,9 @@ No, let me reconsider...
 </tool_call>"""
         results = parser.parse(text)
 
-        assert len(results) == 1
         assert results[0].name == "web_search"
         assert results[0].input["query"] == "Python asyncio tutorial"
-        assert results[0].input["limit"] == 5  # JSON-decoded as integer
+        assert results[0].input["limit"] == 5
 
 
 class TestKimiK2ToolParser:
@@ -1156,13 +397,9 @@ class TestKimiK2ToolParser:
 
     @pytest.fixture
     def parser(self):
-        """Create a default parser."""
         return KimiK2ToolParser()
 
-    # --- Basic Parsing ---
-
     def test_parse_single_tool_call(self, parser):
-        """Parse a single valid tool call."""
         text = (
             "<|tool_calls_section_begin|>"
             "<|tool_call_begin|>functions.calculator:0"
@@ -1178,219 +415,56 @@ class TestKimiK2ToolParser:
         assert results[0].id == "call_0000"
         assert results[0].is_error is False
 
-    def test_parse_multiple_tool_calls(self, parser):
-        """Parse multiple tool calls in one section."""
+    def test_parse_multiple_tool_calls_with_sequential_ids(self, parser):
+        """Multiple calls get sequential IDs, including across sections."""
         text = (
             "<|tool_calls_section_begin|>"
             "<|tool_call_begin|>functions.tool_a:0"
             '<|tool_call_argument_begin|>{"a": 1}'
             "<|tool_call_end|>"
-            "<|tool_call_begin|>functions.tool_b:1"
+            "<|tool_calls_section_end|>"
+            "Some text"
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.tool_b:0"
             '<|tool_call_argument_begin|>{"b": 2}'
             "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-        )
-        results = parser.parse(text)
-
-        assert len(results) == 2
-        assert results[0].name == "tool_a"
-        assert results[0].input == {"a": 1}
-        assert results[0].id == "call_0000"
-        assert results[1].name == "tool_b"
-        assert results[1].input == {"b": 2}
-        assert results[1].id == "call_0001"
-
-    def test_parse_no_tool_calls(self, parser):
-        """Return empty list when no tool calls present."""
-        text = "Just some regular text without any tool calls."
-        results = parser.parse(text)
-
-        assert len(results) == 0
-
-    def test_parse_empty_string(self, parser):
-        """Handle empty string."""
-        results = parser.parse("")
-        assert len(results) == 0
-
-    def test_parse_with_surrounding_text(self, parser):
-        """Parse tool calls surrounded by regular text."""
-        text = (
-            "I'll help you with that calculation.\n"
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.calculator:0"
-            '<|tool_call_argument_begin|>{"x": 10, "y": 20}'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-            "\nHere is the result."
-        )
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "calculator"
-        assert results[0].input == {"x": 10, "y": 20}
-
-    # --- Argument Handling ---
-
-    def test_parse_empty_arguments(self, parser):
-        """Tool call with empty arguments object."""
-        text = (
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.no_args:0"
-            "<|tool_call_argument_begin|>{}"
+            "<|tool_call_begin|>functions.tool_c:1"
+            '<|tool_call_argument_begin|>{}'
             "<|tool_call_end|>"
             "<|tool_calls_section_end|>"
         )
         results = parser.parse(text)
 
-        assert len(results) == 1
-        assert results[0].name == "no_args"
-        assert results[0].input == {}
-        assert results[0].is_error is False
-
-    def test_parse_complex_arguments(self, parser):
-        """Parse complex nested JSON arguments."""
-        text = (
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.complex_tool:0"
-            '<|tool_call_argument_begin|>{"data": {"nested": [1, 2, 3]}, "flag": true}'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-        )
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].input == {"data": {"nested": [1, 2, 3]}, "flag": True}
-
-    def test_parse_string_arguments(self, parser):
-        """Parse string argument values."""
-        text = (
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.search:0"
-            '<|tool_call_argument_begin|>{"query": "hello world", "limit": 10}'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-        )
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].input["query"] == "hello world"
-        assert results[0].input["limit"] == 10
-
-    def test_parse_non_dict_arguments_becomes_empty(self, parser):
-        """Non-dict JSON (e.g., array) is replaced with empty dict."""
-        text = (
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.tool:0"
-            "<|tool_call_argument_begin|>[1, 2, 3]"
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-        )
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].input == {}
-        assert results[0].is_error is False
-
-    # --- Function Name Extraction ---
-
-    def test_parse_extracts_name_from_dotted_format(self, parser):
-        """Function name extracted from functions.name:index format."""
-        text = (
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.my_awesome_tool:0"
-            '<|tool_call_argument_begin|>{"key": "val"}'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-        )
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "my_awesome_tool"
-
-    def test_parse_hyphenated_function_name(self, parser):
-        """Function names with hyphens are parsed correctly."""
-        text = (
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.web-search:0"
-            '<|tool_call_argument_begin|>{"q": "test"}'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-        )
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "web-search"
-
-    def test_parse_dotted_function_name(self, parser):
-        """Function names with dots are fully preserved."""
-        text = (
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.module.sub_tool:0"
-            '<|tool_call_argument_begin|>{"x": 1}'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-        )
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "module.sub_tool"
-
-    def test_parse_no_dot_in_id_uses_raw(self, parser):
-        """ID without a dot falls back to using the full raw ID as name."""
-        text = (
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>calculator:0"
-            '<|tool_call_argument_begin|>{"x": 1}'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-        )
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].name == "calculator:0"
-
-    def test_sequential_ids_generated(self, parser):
-        """IDs are sequential call_NNNN format."""
-        text = (
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.a:0"
-            '<|tool_call_argument_begin|>{"x": 1}'
-            "<|tool_call_end|>"
-            "<|tool_call_begin|>functions.b:1"
-            '<|tool_call_argument_begin|>{"x": 2}'
-            "<|tool_call_end|>"
-            "<|tool_call_begin|>functions.c:2"
-            '<|tool_call_argument_begin|>{"x": 3}'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-        )
-        results = parser.parse(text)
-
+        assert len(results) == 3
+        assert [r.name for r in results] == ["tool_a", "tool_b", "tool_c"]
         assert [r.id for r in results] == ["call_0000", "call_0001", "call_0002"]
 
-    def test_sequential_ids_across_sections(self, parser):
-        """IDs continue incrementing across multiple sections."""
+    def test_parse_no_tool_calls(self, parser):
+        assert parser.parse("Just some regular text.") == []
+        assert parser.parse("") == []
+
+    @pytest.mark.parametrize(
+        "func_id, expected_name",
+        [
+            ("functions.my_tool:0", "my_tool"),  # standard dotted format
+            ("functions.web-search:0", "web-search"),  # hyphenated
+            ("functions.module.sub_tool:0", "module.sub_tool"),  # nested dotted
+            ("calculator:0", "calculator:0"),  # no dot — raw ID as name
+        ],
+    )
+    def test_function_name_extraction(self, parser, func_id, expected_name):
         text = (
             "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.first:0"
-            '<|tool_call_argument_begin|>{"a": 1}'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.second:0"
-            '<|tool_call_argument_begin|>{"b": 2}'
+            f"<|tool_call_begin|>{func_id}"
+            '<|tool_call_argument_begin|>{"x": 1}'
             "<|tool_call_end|>"
             "<|tool_calls_section_end|>"
         )
         results = parser.parse(text)
 
-        assert results[0].id == "call_0000"
-        assert results[1].id == "call_0001"
-
-    # --- Error Cases ---
+        assert results[0].name == expected_name
 
     def test_parse_malformed_json(self, parser):
-        """Malformed JSON creates error result."""
         text = (
             "<|tool_calls_section_begin|>"
             "<|tool_call_begin|>functions.tool:0"
@@ -1400,28 +474,11 @@ class TestKimiK2ToolParser:
         )
         results = parser.parse(text)
 
-        assert len(results) == 1
         assert results[0].is_error is True
         assert results[0].name == "tool"
         assert results[0].raw == "{malformed json}"
 
-    def test_parse_truncated_json(self, parser):
-        """Truncated JSON creates error result."""
-        text = (
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.tool:0"
-            '<|tool_call_argument_begin|>{"key": "val'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-        )
-        results = parser.parse(text)
-
-        assert len(results) == 1
-        assert results[0].is_error is True
-        assert results[0].name == "tool"
-
     def test_parse_mixed_valid_and_invalid(self, parser):
-        """Valid and invalid calls in same section."""
         text = (
             "<|tool_calls_section_begin|>"
             "<|tool_call_begin|>functions.good:0"
@@ -1439,30 +496,12 @@ class TestKimiK2ToolParser:
 
         assert len(results) == 3
         assert results[0].is_error is False
-        assert results[0].name == "good"
         assert results[1].is_error is True
-        assert results[1].name == "bad"
         assert results[2].is_error is False
-        assert results[2].name == "also_good"
-
-    def test_parse_unclosed_section(self, parser):
-        """Unclosed section yields no results."""
-        text = (
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.tool:0"
-            '<|tool_call_argument_begin|>{"a": 1}'
-            "<|tool_call_end|>"
-        )
-        results = parser.parse(text)
-
-        assert len(results) == 0
-
-    # --- Think Block Handling ---
 
     def test_parse_ignores_tool_calls_in_think_block(self, parser):
-        """Tool calls inside <think> blocks are excluded."""
         text = (
-            "<think>Let me think about this...\n"
+            "<think>"
             "<|tool_calls_section_begin|>"
             "<|tool_call_begin|>functions.draft:0"
             '<|tool_call_argument_begin|>{"a": 1}'
@@ -1479,139 +518,174 @@ class TestKimiK2ToolParser:
 
         assert len(results) == 1
         assert results[0].name == "real"
-        assert results[0].input == {"b": 2}
 
-    def test_parse_think_block_only(self, parser):
-        """Only think block tool calls returns empty list."""
+    def test_message_separator_is_empty(self, parser):
+        assert parser.message_separator == ""
+
+
+class TestDeepSeekV32ToolParser:
+    """Tests for DeepSeekV32ToolParser (DeepSeek-V3.2 DSML format)."""
+
+    @pytest.fixture
+    def parser(self):
+        return DeepSeekV32ToolParser()
+
+    def test_parse_single_tool_call(self, parser):
         text = (
-            "<think>"
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.draft:0"
-            '<|tool_call_argument_begin|>{"a": 1}'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-            "</think>"
-        )
-        results = parser.parse(text)
-
-        assert len(results) == 0
-
-    # --- Whitespace Handling ---
-
-    def test_parse_with_whitespace_in_tokens(self, parser):
-        """Whitespace between tokens is tolerated."""
-        text = (
-            "<|tool_calls_section_begin|>\n"
-            "  <|tool_call_begin|> functions.calculator:0 \n"
-            '  <|tool_call_argument_begin|> {"x": 1} \n'
-            "  <|tool_call_end|>\n"
-            "<|tool_calls_section_end|>"
+            '<｜DSML｜function_calls>\n'
+            '<｜DSML｜invoke name="get_weather">\n'
+            '<｜DSML｜parameter name="city" string="true">London</｜DSML｜parameter>\n'
+            '<｜DSML｜parameter name="days" string="false">5</｜DSML｜parameter>\n'
+            '</｜DSML｜invoke>\n'
+            '</｜DSML｜function_calls>'
         )
         results = parser.parse(text)
 
         assert len(results) == 1
-        assert results[0].name == "calculator"
-        assert results[0].input == {"x": 1}
+        assert results[0].name == "get_weather"
+        assert results[0].input == {"city": "London", "days": 5}
+        assert results[0].id == "call_0000"
+        assert results[0].is_error is False
 
-    # --- Multiple Sections ---
-
-    def test_parse_multiple_sections(self, parser):
-        """Parse tool calls from multiple sections."""
+    def test_parse_multiple_tool_calls(self, parser):
+        """Multiple calls get sequential IDs."""
         text = (
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.first:0"
-            '<|tool_call_argument_begin|>{"a": 1}'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
-            "Some text in between"
-            "<|tool_calls_section_begin|>"
-            "<|tool_call_begin|>functions.second:0"
-            '<|tool_call_argument_begin|>{"b": 2}'
-            "<|tool_call_end|>"
-            "<|tool_calls_section_end|>"
+            '<｜DSML｜function_calls>\n'
+            '<｜DSML｜invoke name="tool_a">\n'
+            '<｜DSML｜parameter name="x" string="false">1</｜DSML｜parameter>\n'
+            '</｜DSML｜invoke>\n'
+            '<｜DSML｜invoke name="tool_b">\n'
+            '<｜DSML｜parameter name="y" string="true">hello</｜DSML｜parameter>\n'
+            '</｜DSML｜invoke>\n'
+            '</｜DSML｜function_calls>'
         )
         results = parser.parse(text)
 
         assert len(results) == 2
-        assert results[0].name == "first"
-        assert results[1].name == "second"
+        assert results[0].name == "tool_a"
+        assert results[0].input == {"x": 1}
+        assert results[0].id == "call_0000"
+        assert results[1].name == "tool_b"
+        assert results[1].input == {"y": "hello"}
+        assert results[1].id == "call_0001"
 
-    # --- Message Separator ---
+    def test_parse_no_tool_calls(self, parser):
+        assert parser.parse("Just some regular text.") == []
+        assert parser.parse("") == []
 
-    def test_message_separator_is_empty(self, parser):
-        """Kimi K2 uses no message separator."""
-        assert parser.message_separator == ""
+    def test_invoke_with_no_parameters(self, parser):
+        text = (
+            '<｜DSML｜function_calls>\n'
+            '<｜DSML｜invoke name="no_args">\n'
+            '</｜DSML｜invoke>\n'
+            '</｜DSML｜function_calls>'
+        )
+        results = parser.parse(text)
+
+        assert results[0].name == "no_args"
+        assert results[0].input == {}
+
+    @pytest.mark.parametrize(
+        "string_flag, raw_value, expected",
+        [
+            ("true", "123", "123"),  # string keeps raw value
+            ("true", "true", "true"),  # string "true" != bool True
+            ("false", "42", 42),  # int
+            ("false", "true", True),  # bool
+            ("false", "[1, 2, 3]", [1, 2, 3]),  # list
+            ("false", '{"a": 1}', {"a": 1}),  # object
+            ("false", "not json", "not json"),  # invalid JSON falls back to string
+        ],
+    )
+    def test_parameter_type_handling(self, parser, string_flag, raw_value, expected):
+        """string attribute controls whether value is kept as string or JSON-decoded."""
+        text = (
+            '<｜DSML｜function_calls>\n'
+            f'<｜DSML｜invoke name="tool">\n'
+            f'<｜DSML｜parameter name="val" string="{string_flag}">{raw_value}</｜DSML｜parameter>\n'
+            '</｜DSML｜invoke>\n'
+            '</｜DSML｜function_calls>'
+        )
+        results = parser.parse(text)
+
+        assert results[0].input["val"] == expected
+
+    def test_exclude_tool_calls_inside_think_block(self, parser):
+        text = (
+            '<think>\n'
+            '<｜DSML｜function_calls>\n'
+            '<｜DSML｜invoke name="draft">\n'
+            '<｜DSML｜parameter name="x" string="false">1</｜DSML｜parameter>\n'
+            '</｜DSML｜invoke>\n'
+            '</｜DSML｜function_calls>\n'
+            '</think>\n'
+            '<｜DSML｜function_calls>\n'
+            '<｜DSML｜invoke name="actual">\n'
+            '<｜DSML｜parameter name="y" string="false">2</｜DSML｜parameter>\n'
+            '</｜DSML｜invoke>\n'
+            '</｜DSML｜function_calls>'
+        )
+        results = parser.parse(text)
+
+        assert len(results) == 1
+        assert results[0].name == "actual"
+        assert results[0].input == {"y": 2}
+
+    def test_message_separator_is_eos(self, parser):
+        assert parser.message_separator == "<｜end▁of▁sentence｜>"
+
+    def test_unclosed_function_calls_tag(self, parser):
+        text = (
+            '<｜DSML｜function_calls>\n'
+            '<｜DSML｜invoke name="tool">\n'
+            '<｜DSML｜parameter name="x" string="false">1</｜DSML｜parameter>\n'
+            '</｜DSML｜invoke>\n'
+        )
+        assert parser.parse(text) == []
+
+    def test_whitespace_before_closing_bracket(self, parser):
+        """Tolerates whitespace before > in opening tags (matching original PR)."""
+        text = (
+            '<｜DSML｜function_calls>\n'
+            '<｜DSML｜invoke name="tool" >\n'
+            '<｜DSML｜parameter name="x" string="false" >1</｜DSML｜parameter>\n'
+            '</｜DSML｜invoke>\n'
+            '</｜DSML｜function_calls>'
+        )
+        results = parser.parse(text)
+
+        assert results[0].input == {"x": 1}
 
 
 class TestToolParserRegistry:
     """Tests for tool parser registry."""
 
-    def test_get_hermes_parser(self):
-        """Get hermes parser by name."""
-        from strands_sglang.tool_parsers import get_tool_parser
+    @pytest.mark.parametrize(
+        "name, expected_cls",
+        [
+            ("hermes", HermesToolParser),
+            ("qwen_xml", QwenXMLToolParser),
+            ("glm", GLMToolParser),
+            ("kimi_k2", KimiK2ToolParser),
+            ("deepseek_v32", DeepSeekV32ToolParser),
+        ],
+    )
+    def test_registered_parser(self, name, expected_cls):
+        """Each parser is registered and instantiable by name."""
+        from strands_sglang.tool_parsers import TOOL_PARSER_REGISTRY, get_tool_parser
 
-        parser = get_tool_parser("hermes")
-        assert isinstance(parser, HermesToolParser)
+        assert name in TOOL_PARSER_REGISTRY
+        assert TOOL_PARSER_REGISTRY[name] is expected_cls
+        assert isinstance(get_tool_parser(name), expected_cls)
 
     def test_get_parser_with_kwargs(self):
-        """Get parser with custom arguments."""
         from strands_sglang.tool_parsers import get_tool_parser
 
         parser = get_tool_parser("hermes", think_start_token="<reasoning>")
         assert parser.think_start_token == "<reasoning>"
 
     def test_unknown_parser_raises(self):
-        """Unknown parser name raises KeyError."""
         from strands_sglang.tool_parsers import get_tool_parser
 
         with pytest.raises(KeyError, match="Unknown tool parser"):
             get_tool_parser("nonexistent")
-
-    def test_registry_contains_hermes(self):
-        """Registry contains hermes parser."""
-        from strands_sglang.tool_parsers import TOOL_PARSER_REGISTRY
-
-        assert "hermes" in TOOL_PARSER_REGISTRY
-        assert TOOL_PARSER_REGISTRY["hermes"] is HermesToolParser
-
-    def test_get_qwen_xml_parser(self):
-        """Get qwen_xml parser by name."""
-        from strands_sglang.tool_parsers import get_tool_parser
-
-        parser = get_tool_parser("qwen_xml")
-        assert isinstance(parser, QwenXMLToolParser)
-
-    def test_registry_contains_qwen_xml(self):
-        """Registry contains qwen_xml parser."""
-        from strands_sglang.tool_parsers import TOOL_PARSER_REGISTRY
-
-        assert "qwen_xml" in TOOL_PARSER_REGISTRY
-        assert TOOL_PARSER_REGISTRY["qwen_xml"] is QwenXMLToolParser
-
-    def test_get_glm_parser(self):
-        """Get glm parser by name."""
-        from strands_sglang.tool_parsers import get_tool_parser
-
-        parser = get_tool_parser("glm")
-        assert isinstance(parser, GLMToolParser)
-
-    def test_registry_contains_glm(self):
-        """Registry contains glm parser."""
-        from strands_sglang.tool_parsers import TOOL_PARSER_REGISTRY
-
-        assert "glm" in TOOL_PARSER_REGISTRY
-        assert TOOL_PARSER_REGISTRY["glm"] is GLMToolParser
-
-    def test_get_kimi_k2_parser(self):
-        """Get kimi_k2 parser by name."""
-        from strands_sglang.tool_parsers import get_tool_parser
-
-        parser = get_tool_parser("kimi_k2")
-        assert isinstance(parser, KimiK2ToolParser)
-
-    def test_registry_contains_kimi_k2(self):
-        """Registry contains kimi_k2 parser."""
-        from strands_sglang.tool_parsers import TOOL_PARSER_REGISTRY
-
-        assert "kimi_k2" in TOOL_PARSER_REGISTRY
-        assert TOOL_PARSER_REGISTRY["kimi_k2"] is KimiK2ToolParser

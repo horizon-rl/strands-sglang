@@ -163,6 +163,7 @@ def attach_dsv32_encoding(tokenizer: PreTrainedTokenizer) -> None:
 
     # attach the new apply_chat_template to the tokenizer
     tokenizer.apply_chat_template = apply_chat_template
+    tokenizer._dsv32_encoding_attached = True
 
 
 @lru_cache(maxsize=None)

@@ -20,7 +20,10 @@ import json
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, ClassVar, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, TypeVar
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedTokenizerBase
 
 # Parser registry - populated by @register_tool_parser decorator
 TOOL_PARSER_REGISTRY: dict[str, type[ToolParser]] = {}
@@ -120,6 +123,17 @@ class ToolParser(ABC):
             rf"{re.escape(think_start_token)}.*?{re.escape(think_end_token)}",
             re.DOTALL,
         )
+
+    def validate_tokenizer(self, tokenizer: PreTrainedTokenizerBase) -> None:
+        """Validate that the tokenizer is compatible with this parser.
+
+        Called during `SGLangModel.__init__`. Override to check that the
+        tokenizer has required setup (e.g., custom encoding attached).
+
+        Args:
+            tokenizer: The tokenizer that will be used for chat template formatting.
+        """
+        _ = tokenizer  # Used by subclass overrides
 
     @property
     def message_separator(self) -> str:
