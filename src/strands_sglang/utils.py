@@ -20,14 +20,14 @@ import importlib.util
 import logging
 import os
 from functools import cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .client import DEFAULT_MAX_CONNECTIONS, SGLangClient
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import PreTrainedTokenizer, ProcessorMixin
+    from transformers import PreTrainedTokenizerBase, ProcessorMixin
 
 
 @cache
@@ -76,7 +76,7 @@ def get_client_from_slime_args(
 
 
 @cache
-def get_tokenizer(tokenizer_path: str) -> PreTrainedTokenizer:
+def get_tokenizer(tokenizer_path: str) -> PreTrainedTokenizerBase:
     """Get a shared (cached) tokenizer.
 
     For DeepSeek-V3.2, attach its encoding module to the tokenizer to construct `apply_chat_template()`.
@@ -94,10 +94,10 @@ def get_tokenizer(tokenizer_path: str) -> PreTrainedTokenizer:
     encoding_file = os.path.join(tokenizer.name_or_path, "encoding", "encoding_dsv32.py")
     if os.path.isfile(encoding_file):
         attach_dsv32_encoding(tokenizer)
-    return tokenizer
+    return cast("PreTrainedTokenizerBase", tokenizer)
 
 
-def attach_dsv32_encoding(tokenizer: PreTrainedTokenizer) -> None:
+def attach_dsv32_encoding(tokenizer: PreTrainedTokenizerBase) -> None:
     """Attach DeepSeek-V3.2's encoding module to a tokenizer in-place.
 
     Replaces `apply_chat_template()` with one that delegates to
@@ -115,6 +115,8 @@ def attach_dsv32_encoding(tokenizer: PreTrainedTokenizer) -> None:
         cache_dir = tokenizer.name_or_path
         filepath = os.path.join(cache_dir, "encoding", "encoding_dsv32.py")
         spec = importlib.util.spec_from_file_location("encoding_dsv32", filepath)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot load module spec from {filepath}")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         logger.info("Loaded DeepSeek V3.2's encoding module from %s", filepath)
@@ -158,10 +160,10 @@ def attach_dsv32_encoding(tokenizer: PreTrainedTokenizer) -> None:
             else:
                 messages.insert(0, {"role": "system", "content": "", "tools": tools})
 
-        return module.encode_messages(messages, thinking_mode=thinking_mode)
+        return str(module.encode_messages(messages, thinking_mode=thinking_mode))
 
     # attach the new apply_chat_template to the tokenizer
-    tokenizer.apply_chat_template = apply_chat_template
+    tokenizer.apply_chat_template = apply_chat_template  # type: ignore[method-assign,assignment]
     tokenizer._dsv32_encoding_attached = True
 
 
@@ -177,4 +179,4 @@ def get_processor(processor_path: str) -> ProcessorMixin:
     """
     from transformers import AutoProcessor
 
-    return AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)
+    return cast("ProcessorMixin", AutoProcessor.from_pretrained(processor_path, trust_remote_code=True))

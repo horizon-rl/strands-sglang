@@ -15,6 +15,7 @@
 """Strands hook for limiting tool usage within a single agent invocation."""
 
 import logging
+from typing import Any
 
 from strands.hooks import HookProvider, HookRegistry
 from strands.hooks.events import BeforeToolCallEvent, MessageAddedEvent
@@ -90,7 +91,7 @@ class ToolLimiter(HookProvider):
         self._parallel_call_count = 0
         self.cancelled_tool_call_count = 0
 
-    def register_hooks(self, registry: HookRegistry) -> None:
+    def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
         """Register hooks with the strands agent."""
         registry.add_callback(MessageAddedEvent, self._on_message_added)
         registry.add_callback(BeforeToolCallEvent, self._on_before_tool_call)

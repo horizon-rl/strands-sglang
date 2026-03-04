@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 
@@ -230,7 +230,7 @@ class SGLangClient:
 
                     # Success path: parse JSON directly
                     try:
-                        return await resp.json(content_type=None)
+                        return cast(dict[str, Any], await resp.json(content_type=None))
                     except Exception as e:
                         # Non-JSON response — treat as retryable error
                         raise SGLangDecodingError(f"Invalid JSON response: {e}") from e
@@ -301,6 +301,6 @@ class SGLangClient:
             async with session.get("/get_model_info") as resp:
                 if resp.status >= 400:
                     return None
-                return await resp.json(content_type=None)
+                return cast(dict[str, Any], await resp.json(content_type=None))
         except Exception:
             return None

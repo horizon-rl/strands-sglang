@@ -19,7 +19,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from collections.abc import AsyncGenerator, AsyncIterable, Iterator
+from collections.abc import AsyncGenerator, AsyncIterable, Callable, Iterator
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -35,7 +35,7 @@ from strands.types.exceptions import (
     ContextWindowOverflowException,
     ModelThrottledException,
 )
-from strands.types.streaming import StreamEvent
+from strands.types.streaming import StopReason, StreamEvent
 from strands.types.tools import ToolChoice, ToolResultContent, ToolSpec
 from typing_extensions import Unpack, override
 
@@ -94,7 +94,9 @@ class SGLangModel(Model):
         """
         self.client = client
         self.processor = processor
-        self.tokenizer = (processor and processor.tokenizer) or tokenizer
+        self.tokenizer = cast(
+            "PreTrainedTokenizerBase", (processor and getattr(processor, "tokenizer", None)) or tokenizer
+        )
         if not self.tokenizer:
             raise ValueError("Either tokenizer (text-only) or processor (multimodal) must be provided")
         self.tool_parser = tool_parser or HermesToolParser()
@@ -157,11 +159,11 @@ class SGLangModel(Model):
     ) -> dict[str, Any] | str:
         """Convert a single Strands `ContentBlock` or `ToolResultContent` to HF chat template format."""
         # keep dict structure for multimodal content
-        result = {}
+        result: dict[str, Any] = {}
         match content_block:
             case {"text": text}:
                 result = {"type": "text", "text": text}
-            case {"image": image}:
+            case {"image": dict() as image}:
                 mime = f"image/{image['format']}"
                 encoded = base64.b64encode(image["source"]["bytes"]).decode()
                 result = {"type": "image", "image": f"data:{mime};base64,{encoded}"}
@@ -173,7 +175,7 @@ class SGLangModel(Model):
                 raise TypeError(f"content_type=<{next(iter(content_block))}> | unsupported type")
         # flatten to text if not multimodal
         if not is_multimodal:
-            result = result["text"]
+            return str(result["text"])
         return result
 
     @classmethod
@@ -200,13 +202,17 @@ class SGLangModel(Model):
                     assert "toolResult" in cb
                     tr = cb["toolResult"]
                     content = [cls.format_content_block(c, is_multimodal) for c in tr["content"]]
-                    content = content if is_multimodal else content[0]
-                    result.append({"role": "tool", "tool_call_id": tr["toolUseId"], "content": content})
+                    result.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tr["toolUseId"],
+                            "content": content if is_multimodal else content[0],
+                        }
+                    )
             else:
                 # Non-tool content → one HF message (text, image, etc.; toolUse skipped)
                 content = [cls.format_content_block(c, is_multimodal) for c in msg["content"] if "toolUse" not in c]
-                content = content if is_multimodal else content[0]
-                result.append({"role": msg["role"], "content": content})
+                result.append({"role": msg["role"], "content": content if is_multimodal else content[0]})
 
         return result
 
@@ -241,12 +247,14 @@ class SGLangModel(Model):
         chat_messages = self.format_messages(messages, system_prompt, is_multimodal=self.is_multimodal)
         self.image_data.extend(self.extract_image_urls(chat_messages))
         # TODO: add support for other modalities later
-        return self.tokenizer.apply_chat_template(
-            conversation=chat_messages,
-            tools=tools,
-            add_generation_prompt=True,
-            tokenize=False,
-            enable_thinking=self.config.get("enable_thinking"),
+        return str(
+            self.tokenizer.apply_chat_template(
+                conversation=chat_messages,
+                tools=cast(list[dict | Callable], tools),
+                add_generation_prompt=True,
+                tokenize=False,
+                enable_thinking=self.config.get("enable_thinking"),
+            )
         )
 
     @staticmethod
@@ -285,8 +293,8 @@ class SGLangModel(Model):
 
         def _tokenize(text: str) -> list[int]:
             if self.processor:
-                return self.processor(text=text, images=self.image_data or None)["input_ids"][0]
-            return self.tokenizer.encode(text, add_special_tokens=False)
+                return list(self.processor(text=text, images=self.image_data or None)["input_ids"][0])  # type: ignore[arg-type]
+            return list(self.tokenizer.encode(text, add_special_tokens=False))
 
         # First call: full prompt with tools
         if len(self.token_manager) == 0:
@@ -443,7 +451,7 @@ class SGLangModel(Model):
             if meta_info["finish_reason"].get("type") == "length":
                 stop_reason = "max_tokens"
 
-        yield {"messageStop": {"stopReason": stop_reason}}
+        yield {"messageStop": {"stopReason": cast(StopReason, stop_reason)}}
 
         # Yield usage metadata
         if meta_info:
