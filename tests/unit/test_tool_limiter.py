@@ -288,19 +288,6 @@ class TestIgnoredMessages:
         # Text-only user message should NOT raise
         limiter._on_message_added(_user_text_only())
 
-    def test_string_content_ignored(self):
-        """Messages with string content (not list) should be ignored."""
-        limiter = ToolLimiter(max_tool_iters=0)
-        limiter.tool_iter_count = 5
-        event = MessageAddedEvent(agent=_MOCK_AGENT, message={"role": "user", "content": "just a string"})
-        limiter._on_message_added(event)  # should not raise
-
-    def test_missing_content_ignored(self):
-        limiter = ToolLimiter(max_tool_iters=0)
-        limiter.tool_iter_count = 5
-        event = MessageAddedEvent(agent=_MOCK_AGENT, message={"role": "user"})
-        limiter._on_message_added(event)  # should not raise
-
     def test_assistant_with_mixed_content(self):
         """Text + toolUse in same message: counts as 1 iteration with 1 call."""
         limiter = ToolLimiter(max_tool_iters=5, max_tool_calls=5)

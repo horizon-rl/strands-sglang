@@ -90,8 +90,10 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 check_untyped_defs = true
+disallow_untyped_decorators = true
 warn_redundant_casts = true
-exclude = ["tests/"]
+warn_unreachable = true
+ignore_missing_imports = true
 
 [tool.codespell]
 skip = "*.json,*.jsonl"

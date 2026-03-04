@@ -103,10 +103,7 @@ class ToolLimiter(HookProvider):
         - Raises on user messages with toolResult (iteration complete)
         """
         message = event.message
-        content = message.get("content", [])
-
-        if not isinstance(content, list):
-            return
+        content = message["content"]
 
         # Count when model requests tools
         if message.get("role") == "assistant":
