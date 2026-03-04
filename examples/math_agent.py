@@ -89,7 +89,7 @@ async def main():
 
     # Log probabilities
     logprobs = model.token_manager.logprobs
-    output_logprobs = [lp for lp, mask in zip(logprobs, output_mask) if mask and lp is not None]
+    output_logprobs = [lp for lp, mask in zip(logprobs, output_mask, strict=False) if mask and lp is not None]
     if output_logprobs:
         avg_logprob = sum(output_logprobs) / len(output_logprobs)
         print(f"Average output logprob: {avg_logprob:.4f}")

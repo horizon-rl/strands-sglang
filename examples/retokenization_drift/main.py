@@ -32,7 +32,7 @@ from strands_sglang.tool_parsers import HermesToolParser
 
 def find_drift_index(original: list[int], re_encoded: list[int]) -> int | None:
     """Find first index where tokens diverge."""
-    for i, (a, b) in enumerate(zip(original, re_encoded)):
+    for i, (a, b) in enumerate(zip(original, re_encoded, strict=False)):
         if a != b:
             return i
     if len(original) != len(re_encoded):

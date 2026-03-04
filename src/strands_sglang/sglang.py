@@ -19,13 +19,10 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from collections.abc import AsyncGenerator, AsyncIterable, Iterator
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncGenerator,
-    AsyncIterable,
-    Iterator,
-    Type,
     TypedDict,
     TypeVar,
     cast,
@@ -95,7 +92,6 @@ class SGLangModel(Model):
             tool_parser: `ToolParser` for tool calls (default: `HermesToolParser`).
             **config: Additional SGLang generation configuration.
         """
-
         self.client = client
         self.processor = processor
         self.tokenizer = (processor and processor.tokenizer) or tokenizer
@@ -111,7 +107,7 @@ class SGLangModel(Model):
         self.tool_parse_errors: dict[str, int] = {}  # per-tool parse error count
         self.image_data: list[str] = []  # accumulated image data URLs (VLM only)
 
-        logger.debug(f"initialized with config: {self.config}")
+        logger.debug("initialized with config: %s", self.config)
 
     def reset(self) -> None:
         """Reset token accumulation for a new episode.
@@ -335,7 +331,7 @@ class SGLangModel(Model):
         """
         for tool_call in tool_calls:
             if tool_call.is_error:
-                logger.warning(f"Tool parse error for '{tool_call.name}': {(tool_call.raw or '')[:100]}")
+                logger.warning("Tool parse error for '%s': %s", tool_call.name, (tool_call.raw or "")[:100])
                 # Track parse error count per tool name
                 self.tool_parse_errors[tool_call.name] = self.tool_parse_errors.get(tool_call.name, 0) + 1
 
@@ -467,7 +463,7 @@ class SGLangModel(Model):
     @override
     async def structured_output(
         self,
-        output_model: Type[T],
+        output_model: type[T],
         prompt: Messages,
         system_prompt: str | None = None,
         **kwargs: Any,

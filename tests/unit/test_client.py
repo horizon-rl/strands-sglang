@@ -93,7 +93,6 @@ class TestGetSession:
         assert new_session is not mock_session
 
 
-
 class TestClassifyHTTPError:
     """Tests for _classify_http_error static method."""
 

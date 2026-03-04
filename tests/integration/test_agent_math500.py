@@ -100,8 +100,7 @@ MATH500_PROBLEMS = [
         "subject": "Number Theory",
         "level": 3,
         "problem": (
-            "What is the smallest positive perfect cube that can be written "
-            "as the sum of three consecutive integers?"
+            "What is the smallest positive perfect cube that can be written as the sum of three consecutive integers?"
         ),
         "answer": "27",
         "answer_variants": ["27", "3^3", "3**3"],
@@ -301,9 +300,7 @@ class TestTokenTextConsistency:
         # If tool was called, "calculator" should appear in trajectory
         # Check for tool_call markers or tool name
         has_tool_reference = (
-            "calculator" in decoded.lower() or
-            "tool_call" in decoded.lower() or
-            "<tool_call>" in decoded
+            "calculator" in decoded.lower() or "tool_call" in decoded.lower() or "<tool_call>" in decoded
         )
         assert has_tool_reference, "Tool reference should appear in trajectory"
 
@@ -366,8 +363,9 @@ class TestSingleInvocationTITO:
             if is_response:
                 # Response tokens should have float logprobs
                 for token in segment_tokens:
-                    assert isinstance(token.logprob, float), \
+                    assert isinstance(token.logprob, float), (
                         f"Response token should have float logprob, got {type(token.logprob)}"
+                    )
             # Prompt tokens may have None or float (depending on SGLang config)
 
 
@@ -398,12 +396,14 @@ class TestMultiTurnConsistency:
         segments_after_turn2 = len(model.token_manager.segments)
 
         # Tokens should increase
-        assert tokens_after_turn2 > tokens_after_turn1, \
+        assert tokens_after_turn2 > tokens_after_turn1, (
             f"Tokens should increase: {tokens_after_turn1} -> {tokens_after_turn2}"
+        )
 
         # Segments should increase
-        assert segments_after_turn2 > segments_after_turn1, \
+        assert segments_after_turn2 > segments_after_turn1, (
             f"Segments should increase: {segments_after_turn1} -> {segments_after_turn2}"
+        )
 
     async def test_previous_content_preserved(self, model, tokenizer):
         """Previous turn content is preserved in trajectory."""
@@ -423,8 +423,7 @@ class TestMultiTurnConsistency:
 
         # Turn 1 content should still be in trajectory
         assert "7" in decoded_after_turn2, "Previous turn content should be preserved"
-        assert len(decoded_after_turn2) > len(decoded_after_turn1), \
-            "Trajectory should grow"
+        assert len(decoded_after_turn2) > len(decoded_after_turn1), "Trajectory should grow"
 
     async def test_loss_mask_consistency_across_turns(self, model, tokenizer):
         """Loss mask remains consistent across turns."""
@@ -442,8 +441,7 @@ class TestMultiTurnConsistency:
         mask_after_turn2 = model.token_manager.loss_mask
 
         # First N tokens should have same mask as before
-        assert mask_after_turn2[:tokens_after_turn1] == mask_after_turn1, \
-            "Previous token masks should be preserved"
+        assert mask_after_turn2[:tokens_after_turn1] == mask_after_turn1, "Previous token masks should be preserved"
 
     async def test_segment_info_grows_correctly(self, model, tokenizer):
         """Segment info grows correctly across turns."""
@@ -460,7 +458,7 @@ class TestMultiTurnConsistency:
         info2 = list(model.token_manager.segment_info)
 
         # Previous segments should be unchanged
-        assert info2[:len(info1)] == info1, "Previous segment info should be preserved"
+        assert info2[: len(info1)] == info1, "Previous segment info should be preserved"
 
         # New segments should be added
         assert len(info2) > len(info1), "New segments should be added"
@@ -587,8 +585,7 @@ class TestRetokenizationDrift:
         re_encoded = tokenizer.encode(decoded, add_special_tokens=False)
 
         assert list(tito_tokens) == list(re_encoded), (
-            f"Multi-turn retokenization drift detected!\n"
-            f"Length mismatch: {len(tito_tokens)} vs {len(re_encoded)}"
+            f"Multi-turn retokenization drift detected!\nLength mismatch: {len(tito_tokens)} vs {len(re_encoded)}"
         )
 
     async def test_tool_use_no_drift(self, model, tokenizer):
@@ -610,8 +607,7 @@ class TestRetokenizationDrift:
 
         # This is the critical invariant for RL training
         assert list(tito_tokens) == list(re_encoded), (
-            "Tool use retokenization drift detected! "
-            "This will cause incorrect policy gradients in RL training."
+            "Tool use retokenization drift detected! This will cause incorrect policy gradients in RL training."
         )
 
 
@@ -643,8 +639,7 @@ class TestMultipleToolCalls:
 
         # Should have multiple tool calls
         assert tool_call_count >= 2, (
-            f"Expected multiple tool calls, found {tool_call_count}.\n"
-            f"Trajectory sample: {decoded[:500]}..."
+            f"Expected multiple tool calls, found {tool_call_count}.\nTrajectory sample: {decoded[:500]}..."
         )
 
         # Each tool call should have corresponding segments
@@ -676,8 +671,7 @@ class TestMultipleToolCalls:
         # (initial prompt + tool result prompts)
         if response_count >= 2:
             assert prompt_count >= 2, (
-                f"Tool results should create prompt segments. "
-                f"Prompts: {prompt_count}, Responses: {response_count}"
+                f"Tool results should create prompt segments. Prompts: {prompt_count}, Responses: {response_count}"
             )
 
 
@@ -711,21 +705,17 @@ class TestLongConversation:
         # Tokens should monotonically increase
         for i in range(1, len(token_counts)):
             assert token_counts[i] > token_counts[i - 1], (
-                f"Turn {i + 1}: tokens should increase. "
-                f"{token_counts[i - 1]} -> {token_counts[i]}"
+                f"Turn {i + 1}: tokens should increase. {token_counts[i - 1]} -> {token_counts[i]}"
             )
 
         # Segments should monotonically increase
         for i in range(1, len(segment_counts)):
             assert segment_counts[i] > segment_counts[i - 1], (
-                f"Turn {i + 1}: segments should increase. "
-                f"{segment_counts[i - 1]} -> {segment_counts[i]}"
+                f"Turn {i + 1}: segments should increase. {segment_counts[i - 1]} -> {segment_counts[i]}"
             )
 
         # Final segment count should be at least 2 per turn
-        assert segment_counts[-1] >= 10, (
-            f"Expected at least 10 segments for 5 turns, got {segment_counts[-1]}"
-        )
+        assert segment_counts[-1] >= 10, f"Expected at least 10 segments for 5 turns, got {segment_counts[-1]}"
 
     async def test_long_conversation_no_drift(self, model, tokenizer):
         """Long conversation: TITO avoids the need for lossless encode/decode.
@@ -760,7 +750,7 @@ class TestLongConversation:
             # Log the drift but don't fail - TITO's value is that we don't need
             # lossless round-tripping.
             drift_idx = next(
-                (i for i, (a, b) in enumerate(zip(tito_tokens, re_encoded)) if a != b),
+                (i for i, (a, b) in enumerate(zip(tito_tokens, re_encoded, strict=False)) if a != b),
                 len(tito_tokens),
             )
             pytest.skip(
@@ -786,8 +776,4 @@ class TestLongConversation:
 
         # All numbers should appear in final trajectory
         for num in numbers:
-            assert num in decoded, (
-                f"Number {num} not found in trajectory. "
-                f"Context may not be properly preserved."
-            )
-
+            assert num in decoded, f"Number {num} not found in trajectory. Context may not be properly preserved."

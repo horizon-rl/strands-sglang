@@ -19,8 +19,9 @@ from __future__ import annotations
 import json
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizerBase
@@ -36,7 +37,7 @@ class ToolParseResult:
     """A parsed tool call request.
 
     For successful parses: name and input are populated, raw is None.
-    For parse errors: name is extracted or UNKNOWN_NAME, raw contains the unparseable content.
+    For parse errors: name is extracted or UNKNOWN_NAME, raw contains the unparsable content.
     """
 
     UNKNOWN_NAME: ClassVar[str] = "unknown_tool"
@@ -52,7 +53,7 @@ class ToolParseResult:
 
         Args:
             id: Tool call ID.
-            raw: The unparseable raw content (fed back to model for self-correction).
+            raw: The unparsable raw content (fed back to model for self-correction).
             name: Best-effort extracted tool name (defaults to UNKNOWN_NAME).
         """
         return cls(id=id, name=name if name is not None else cls.UNKNOWN_NAME, input={}, raw=raw)

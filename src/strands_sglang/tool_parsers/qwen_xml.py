@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool_parser("qwen_xml")
 class QwenXMLToolParser(ToolParser):
-    """Parser for Qwen3-Coder XML tool call format.
+    r"""Parser for Qwen3-Coder XML tool call format.
 
     Format:
         <tool_call>

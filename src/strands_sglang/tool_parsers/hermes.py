@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool_parser("hermes")
 class HermesToolParser(ToolParser):
-    """Parser for Hermes/Qwen tool call format (JSON wrapped in delimiters).
+    r"""Parser for Hermes/Qwen tool call format (JSON wrapped in delimiters).
 
     Format: <tool_call>{"name": "func", "arguments": {"arg": value}}</tool_call>
 
@@ -84,7 +84,7 @@ class HermesToolParser(ToolParser):
             except json.JSONDecodeError as e:
                 name_match = self._NAME_PATTERN.search(raw_content)
                 name = name_match.group(1) if name_match else ToolParseResult.UNKNOWN_NAME
-                logger.warning(f"Tool parse error: {e}")
+                logger.warning("Tool parse error: %s", e)
                 tool_calls.append(ToolParseResult.from_parse_error(id=tool_call_id, raw=raw_content, name=name))
                 continue
 

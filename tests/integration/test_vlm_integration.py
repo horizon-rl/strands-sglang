@@ -154,9 +154,7 @@ class TestVLMMultiTurn:
         async for event in vlm_model.stream(messages):
             events1.append(event)
 
-        first_response = "".join(
-            e["contentBlockDelta"]["delta"]["text"] for e in events1 if "contentBlockDelta" in e
-        )
+        first_response = "".join(e["contentBlockDelta"]["delta"]["text"] for e in events1 if "contentBlockDelta" in e)
         tokens_after_first = len(vlm_model.token_manager)
 
         # Second turn (no new image)

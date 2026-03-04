@@ -62,6 +62,7 @@ class DeepSeekV32ToolParser(ToolParser):
     )
 
     def __init__(self) -> None:
+        """Initialize a `DeepSeekV32ToolParser` instance."""
         super().__init__(
             tool_start_token="<｜DSML｜function_calls>",
             tool_end_token="</｜DSML｜function_calls>",

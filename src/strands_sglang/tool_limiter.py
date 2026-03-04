@@ -101,7 +101,6 @@ class ToolLimiter(HookProvider):
         - Counts on assistant messages with toolUse (model requesting tools)
         - Raises on user messages with toolResult (iteration complete)
         """
-
         message = event.message
         content = message.get("content", [])
 
@@ -119,21 +118,23 @@ class ToolLimiter(HookProvider):
                 self.tool_call_count += cur_tool_call_count
                 self._parallel_call_count = 0  # Reset parallel call counter for new model response
                 logger.debug(
-                    f"Iteration {self.tool_iter_count} started "
-                    f"({cur_tool_call_count} tool call(s), {self.tool_call_count} total calls)"
+                    "Iteration %d started (%d tool call(s), %d total calls)",
+                    self.tool_iter_count,
+                    cur_tool_call_count,
+                    self.tool_call_count,
                 )
 
         # Check limit when tool result arrives (iteration complete)
         elif message.get("role") == "user":
             if any(c.get("toolResult") for c in content):
                 if self.max_tool_iters is not None and self.tool_iter_count >= self.max_tool_iters:
-                    logger.debug(f"Max tool iterations ({self.max_tool_iters}) reached, stopping")
+                    logger.debug("Max tool iterations (%d) reached, stopping", self.max_tool_iters)
                     raise MaxToolIterationsReachedError(
                         f"Max tool iterations ({self.max_tool_iters}) reached"
                         " (parallel tool calls count as one iteration)"
                     )
                 if self.max_tool_calls is not None and self.tool_call_count >= self.max_tool_calls:
-                    logger.debug(f"Max tool calls ({self.max_tool_calls}) reached, stopping")
+                    logger.debug("Max tool calls (%d) reached, stopping", self.max_tool_calls)
                     raise MaxToolCallsReachedError(
                         f"Max tool calls ({self.max_tool_calls}) reached"
                         " (parallel tool calls count as individual calls)"
@@ -151,5 +152,7 @@ class ToolLimiter(HookProvider):
                 f"Max parallel tool calls ({self.max_parallel_tool_calls}) reached. This tool call was not executed."
             )
             logger.debug(
-                f"Cancelled tool call (parallel count {self._parallel_call_count}, limit {self.max_parallel_tool_calls})"
+                "Cancelled tool call (parallel count %d, limit %s)",
+                self._parallel_call_count,
+                self.max_parallel_tool_calls,
             )

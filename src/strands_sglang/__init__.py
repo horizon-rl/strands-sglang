@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""SGLang model provider for Strands Agents SDK with token-in/token-out support for agentic RL training."""
+
 from .client import SGLangClient
 from .exceptions import (
     SGLangClientError,

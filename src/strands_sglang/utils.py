@@ -19,7 +19,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
-from functools import lru_cache
+from functools import cache
 from typing import TYPE_CHECKING, Any
 
 from .client import DEFAULT_MAX_CONNECTIONS, SGLangClient
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer, ProcessorMixin
 
 
-@lru_cache(maxsize=None)
+@cache
 def get_client(
     base_url: str,
     *,
@@ -75,7 +75,7 @@ def get_client_from_slime_args(
     )
 
 
-@lru_cache(maxsize=None)
+@cache
 def get_tokenizer(tokenizer_path: str) -> PreTrainedTokenizer:
     """Get a shared (cached) tokenizer.
 
@@ -117,9 +117,9 @@ def attach_dsv32_encoding(tokenizer: PreTrainedTokenizer) -> None:
         spec = importlib.util.spec_from_file_location("encoding_dsv32", filepath)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        logger.info(f"Loaded DeepSeek V3.2's encoding module from {filepath}")
+        logger.info("Loaded DeepSeek V3.2's encoding module from %s", filepath)
     except Exception as e:
-        logger.error(f"Failed to load DeepSeek V3.2's encoding module from {filepath}: {e}")
+        logger.error("Failed to load DeepSeek V3.2's encoding module from %s: %s", filepath, e)
         raise
 
     def apply_chat_template(
@@ -133,9 +133,8 @@ def attach_dsv32_encoding(tokenizer: PreTrainedTokenizer) -> None:
 
         Drop-in replacement for Jinja-based `apply_chat_template()`.
         """
-
         if kwargs:
-            logger.warning(f"DeepSeek V3.2 doesn't support the following kwargs: {kwargs}")
+            logger.warning("DeepSeek V3.2 doesn't support the following kwargs: %s", kwargs)
 
         thinking_mode = "thinking" if enable_thinking else "chat"
 
@@ -166,7 +165,7 @@ def attach_dsv32_encoding(tokenizer: PreTrainedTokenizer) -> None:
     tokenizer._dsv32_encoding_attached = True
 
 
-@lru_cache(maxsize=None)
+@cache
 def get_processor(processor_path: str) -> ProcessorMixin:
     """Get a shared (cached) multimodal processor.
 

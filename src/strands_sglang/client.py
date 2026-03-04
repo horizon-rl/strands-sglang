@@ -107,9 +107,11 @@ class SGLangClient:
         self._session: aiohttp.ClientSession | None = None
 
         logger.info(
-            f"SGLangClient initialized: base_url={self.base_url}, "
-            f"max_connections={max_connections}, "
-            f"timeout={timeout}, max_retries={max_retries}"
+            "SGLangClient initialized: base_url=%s, max_connections=%s, timeout=%s, max_retries=%s",
+            self.base_url,
+            max_connections,
+            timeout,
+            max_retries,
         )
 
     def _get_session(self) -> aiohttp.ClientSession:
@@ -253,14 +255,20 @@ class SGLangClient:
             error_detail = str(last_error)
             if attempt < self.max_retries:
                 logger.warning(
-                    f"SGLang request failed (attempt {attempt + 1}/{self.max_retries + 1}): "
-                    f"{type(last_error).__name__}: {error_detail}. Retrying in {self.retry_delay}s..."
+                    "SGLang request failed (attempt %d/%d): %s: %s. Retrying in %ss...",
+                    attempt + 1,
+                    self.max_retries + 1,
+                    type(last_error).__name__,
+                    error_detail,
+                    self.retry_delay,
                 )
                 await asyncio.sleep(self.retry_delay)
             else:
                 logger.error(
-                    f"SGLang request failed after {self.max_retries + 1} attempts: "
-                    f"{type(last_error).__name__}: {error_detail}"
+                    "SGLang request failed after %d attempts: %s: %s",
+                    self.max_retries + 1,
+                    type(last_error).__name__,
+                    error_detail,
                 )
                 raise last_error
 

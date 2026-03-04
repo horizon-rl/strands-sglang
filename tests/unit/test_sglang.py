@@ -220,11 +220,7 @@ class TestExtractLogprobs:
 
     def test_extract_from_meta_info(self, model):
         """Extract logprobs from meta_info."""
-        event = {
-            "meta_info": {
-                "output_token_logprobs": [[-0.5, 100], [-0.3, 200], [-0.1, 300]]
-            }
-        }
+        event = {"meta_info": {"output_token_logprobs": [[-0.5, 100], [-0.3, 200], [-0.1, 300]]}}
         result = model._extract_logprobs(event, "output_token_logprobs")
 
         assert result == [-0.5, -0.3, -0.1]
@@ -263,9 +259,7 @@ class TestYieldToolUseEvents:
 
     def test_single_tool_call(self, model):
         """Yield events for single tool call."""
-        tool_calls = [
-            ToolParseResult(id="call_123", name="calculator", input={"expr": "2+2"})
-        ]
+        tool_calls = [ToolParseResult(id="call_123", name="calculator", input={"expr": "2+2"})]
         events = list(model._yield_tool_use_events(tool_calls))
 
         assert len(events) == 3
@@ -299,9 +293,7 @@ class TestYieldToolUseEvents:
 
     def test_error_tool_call(self, model):
         """Error tool call includes raw content."""
-        tool_calls = [
-            ToolParseResult(id="call_err", name="broken", input={}, raw="invalid json")
-        ]
+        tool_calls = [ToolParseResult(id="call_err", name="broken", input={}, raw="invalid json")]
         events = list(model._yield_tool_use_events(tool_calls))
 
         assert len(events) == 3

@@ -98,10 +98,10 @@ class KimiK2ToolParser(ToolParser):
                 try:
                     arguments = json.loads(raw_args)
                     if not isinstance(arguments, dict):
-                        logger.warning(f"Tool parse error: arguments is not a dict for {name}")
+                        logger.warning("Tool parse error: arguments is not a dict for %s", name)
                         arguments = {}
                 except json.JSONDecodeError:
-                    logger.warning(f"Failed to parse arguments for {name}: {raw_args[:200]}")
+                    logger.warning("Failed to parse arguments for %s: %s", name, raw_args[:200])
                     tool_calls.append(ToolParseResult.from_parse_error(id=tool_call_id, raw=raw_args, name=name))
                     continue
 

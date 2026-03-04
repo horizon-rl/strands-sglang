@@ -429,7 +429,7 @@ class TestKimiK2ToolParser:
             '<|tool_call_argument_begin|>{"b": 2}'
             "<|tool_call_end|>"
             "<|tool_call_begin|>functions.tool_c:1"
-            '<|tool_call_argument_begin|>{}'
+            "<|tool_call_argument_begin|>{}"
             "<|tool_call_end|>"
             "<|tool_calls_section_end|>"
         )
@@ -532,12 +532,12 @@ class TestDeepSeekV32ToolParser:
 
     def test_parse_single_tool_call(self, parser):
         text = (
-            '<｜DSML｜function_calls>\n'
+            "<｜DSML｜function_calls>\n"
             '<｜DSML｜invoke name="get_weather">\n'
             '<｜DSML｜parameter name="city" string="true">London</｜DSML｜parameter>\n'
             '<｜DSML｜parameter name="days" string="false">5</｜DSML｜parameter>\n'
-            '</｜DSML｜invoke>\n'
-            '</｜DSML｜function_calls>'
+            "</｜DSML｜invoke>\n"
+            "</｜DSML｜function_calls>"
         )
         results = parser.parse(text)
 
@@ -550,14 +550,14 @@ class TestDeepSeekV32ToolParser:
     def test_parse_multiple_tool_calls(self, parser):
         """Multiple calls get sequential IDs."""
         text = (
-            '<｜DSML｜function_calls>\n'
+            "<｜DSML｜function_calls>\n"
             '<｜DSML｜invoke name="tool_a">\n'
             '<｜DSML｜parameter name="x" string="false">1</｜DSML｜parameter>\n'
-            '</｜DSML｜invoke>\n'
+            "</｜DSML｜invoke>\n"
             '<｜DSML｜invoke name="tool_b">\n'
             '<｜DSML｜parameter name="y" string="true">hello</｜DSML｜parameter>\n'
-            '</｜DSML｜invoke>\n'
-            '</｜DSML｜function_calls>'
+            "</｜DSML｜invoke>\n"
+            "</｜DSML｜function_calls>"
         )
         results = parser.parse(text)
 
@@ -574,12 +574,7 @@ class TestDeepSeekV32ToolParser:
         assert parser.parse("") == []
 
     def test_invoke_with_no_parameters(self, parser):
-        text = (
-            '<｜DSML｜function_calls>\n'
-            '<｜DSML｜invoke name="no_args">\n'
-            '</｜DSML｜invoke>\n'
-            '</｜DSML｜function_calls>'
-        )
+        text = '<｜DSML｜function_calls>\n<｜DSML｜invoke name="no_args">\n</｜DSML｜invoke>\n</｜DSML｜function_calls>'
         results = parser.parse(text)
 
         assert results[0].name == "no_args"
@@ -600,11 +595,11 @@ class TestDeepSeekV32ToolParser:
     def test_parameter_type_handling(self, parser, string_flag, raw_value, expected):
         """string attribute controls whether value is kept as string or JSON-decoded."""
         text = (
-            '<｜DSML｜function_calls>\n'
+            "<｜DSML｜function_calls>\n"
             f'<｜DSML｜invoke name="tool">\n'
             f'<｜DSML｜parameter name="val" string="{string_flag}">{raw_value}</｜DSML｜parameter>\n'
-            '</｜DSML｜invoke>\n'
-            '</｜DSML｜function_calls>'
+            "</｜DSML｜invoke>\n"
+            "</｜DSML｜function_calls>"
         )
         results = parser.parse(text)
 
@@ -612,18 +607,18 @@ class TestDeepSeekV32ToolParser:
 
     def test_exclude_tool_calls_inside_think_block(self, parser):
         text = (
-            '<think>\n'
-            '<｜DSML｜function_calls>\n'
+            "<think>\n"
+            "<｜DSML｜function_calls>\n"
             '<｜DSML｜invoke name="draft">\n'
             '<｜DSML｜parameter name="x" string="false">1</｜DSML｜parameter>\n'
-            '</｜DSML｜invoke>\n'
-            '</｜DSML｜function_calls>\n'
-            '</think>\n'
-            '<｜DSML｜function_calls>\n'
+            "</｜DSML｜invoke>\n"
+            "</｜DSML｜function_calls>\n"
+            "</think>\n"
+            "<｜DSML｜function_calls>\n"
             '<｜DSML｜invoke name="actual">\n'
             '<｜DSML｜parameter name="y" string="false">2</｜DSML｜parameter>\n'
-            '</｜DSML｜invoke>\n'
-            '</｜DSML｜function_calls>'
+            "</｜DSML｜invoke>\n"
+            "</｜DSML｜function_calls>"
         )
         results = parser.parse(text)
 
@@ -636,21 +631,21 @@ class TestDeepSeekV32ToolParser:
 
     def test_unclosed_function_calls_tag(self, parser):
         text = (
-            '<｜DSML｜function_calls>\n'
+            "<｜DSML｜function_calls>\n"
             '<｜DSML｜invoke name="tool">\n'
             '<｜DSML｜parameter name="x" string="false">1</｜DSML｜parameter>\n'
-            '</｜DSML｜invoke>\n'
+            "</｜DSML｜invoke>\n"
         )
         assert parser.parse(text) == []
 
     def test_whitespace_before_closing_bracket(self, parser):
         """Tolerates whitespace before > in opening tags (matching original PR)."""
         text = (
-            '<｜DSML｜function_calls>\n'
+            "<｜DSML｜function_calls>\n"
             '<｜DSML｜invoke name="tool" >\n'
             '<｜DSML｜parameter name="x" string="false" >1</｜DSML｜parameter>\n'
-            '</｜DSML｜invoke>\n'
-            '</｜DSML｜function_calls>'
+            "</｜DSML｜invoke>\n"
+            "</｜DSML｜function_calls>"
         )
         results = parser.parse(text)
 

@@ -142,7 +142,7 @@ async def main():
     print(f"  Output tokens:   {n_output}")
     print(f"  Loss mask:       {tm.loss_mask[:10]}... (first 10)")
 
-    output_logprobs = [lp for lp, m in zip(tm.logprobs, tm.loss_mask) if m and lp is not None]
+    output_logprobs = [lp for lp, m in zip(tm.logprobs, tm.loss_mask, strict=False) if m and lp is not None]
     if output_logprobs:
         print(f"  Avg logprob:     {sum(output_logprobs) / len(output_logprobs):.4f}")
 

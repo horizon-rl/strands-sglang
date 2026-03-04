@@ -189,11 +189,7 @@ class TestIncrementalPath:
         result = patched_tokenizer.apply_chat_template(messages, enable_thinking=True)
 
         expected = (
-            "\n\n<function_results>"
-            "\n<result>result1</result>"
-            "\n<result>result2</result>"
-            "\n</function_results>"
-            "\n\n<think>"
+            "\n\n<function_results>\n<result>result1</result>\n<result>result2</result>\n</function_results>\n\n<think>"
         )
         assert result == expected
 
@@ -265,7 +261,7 @@ class TestAttachDsv32Encoding:
         tok = MagicMock()
         tok.name_or_path = "/nonexistent/path"
 
-        with pytest.raises(Exception):
+        with pytest.raises((AttributeError, FileNotFoundError)):
             attach_dsv32_encoding(tok)
 
     def test_kwargs_warning(self, patched_tokenizer, caplog):

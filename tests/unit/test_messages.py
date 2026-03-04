@@ -156,7 +156,7 @@ class TestFormatMessagesRegression:
         ref = ref_format_messages(messages)
 
         assert len(new) == len(ref) == 2
-        for n, r in zip(new, ref):
+        for n, r in zip(new, ref, strict=False):
             assert n["role"] == r["role"] == "tool"
             assert n["tool_call_id"] == r["tool_call_id"]
             assert n["content"] == r["content"]
@@ -200,7 +200,7 @@ class TestFormatMessagesRegression:
         ref = ref_format_messages(messages)
 
         assert len(new) == len(ref) == 3
-        for n, r in zip(new, ref):
+        for n, r in zip(new, ref, strict=False):
             assert n["role"] == r["role"] == "tool"
             assert n["tool_call_id"] == r["tool_call_id"]
             assert n["content"] == r["content"]
