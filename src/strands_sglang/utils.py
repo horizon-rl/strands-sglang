@@ -20,7 +20,7 @@ import importlib.util
 import logging
 import os
 from functools import cache
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from .client import DEFAULT_MAX_CONNECTIONS, SGLangClient
 
@@ -94,7 +94,7 @@ def get_tokenizer(tokenizer_path: str) -> PreTrainedTokenizerBase:
     encoding_file = os.path.join(tokenizer.name_or_path, "encoding", "encoding_dsv32.py")
     if os.path.isfile(encoding_file):
         attach_dsv32_encoding(tokenizer)
-    return cast("PreTrainedTokenizerBase", tokenizer)
+    return tokenizer
 
 
 def attach_dsv32_encoding(tokenizer: PreTrainedTokenizerBase) -> None:
@@ -179,4 +179,4 @@ def get_processor(processor_path: str) -> ProcessorMixin:
     """
     from transformers import AutoProcessor
 
-    return cast("ProcessorMixin", AutoProcessor.from_pretrained(processor_path, trust_remote_code=True))
+    return AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)
