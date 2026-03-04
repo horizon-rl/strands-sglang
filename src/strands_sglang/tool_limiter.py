@@ -12,16 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Strands hook for limiting tool usage within a single agent invocation.
-
-Supports three limits:
-- **Iteration limit** (`max_tool_iters`): one iteration = one model response requesting
-  tools + tool execution. Parallel tool calls in a single response count as one iteration.
-- **Call limit** (`max_tool_calls`): counts each individual tool call regardless of
-  whether they were parallel or sequential.
-- **Parallel call limit** (`max_parallel_tool_calls`): within a single model response, at most N tool calls are executed. Excess calls are cancelled via
-  `BeforeToolCallEvent.cancel_tool` and returned to the model as error results.
-"""
+"""Strands hook for limiting tool usage within a single agent invocation."""
 
 import logging
 

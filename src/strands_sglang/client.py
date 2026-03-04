@@ -12,16 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""SGLang HTTP client with connection pooling and retry logic.
-
-Aligned with slime's http_utils.py for RL training stability:
-- Aggressive retry (60 attempts by default)
-- Retries on all transient errors
-- 15mins timeout by default for long generations
-- Non-streaming POST for better parallelism (no SSE overhead)
-
-Uses aiohttp for high-concurrency performance.
-"""
+"""SGLang HTTP client with connection pooling and retry logic."""
 
 from __future__ import annotations
 

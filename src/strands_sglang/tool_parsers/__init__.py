@@ -12,21 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tool call parsers for different model formats.
-
-This module provides parsers that extract tool calls from model outputs.
-Different models use different formats for tool calls in their chat templates.
-
-Design for RL Training:
-- Only handle `JSONDecodeError` (can't extract anything from malformed JSON)
-- Let Strands validate arguments against tool schemas
-- Parse errors become tool calls with error info for model feedback
-
-Adding a new parser:
-    1. Create a new file (e.g., `my_parser.py`)
-    2. Decorate the class with `@register_tool_parser("my_parser")`
-    3. Import the module here to trigger registration
-"""
+"""Tool call parsers for different model chat templates."""
 
 from .base import TOOL_PARSER_REGISTRY, ToolParser, ToolParseResult, get_tool_parser
 

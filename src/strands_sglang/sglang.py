@@ -12,18 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""SGLang native `/generate` API model provider for token-in/token-out training.
-
-This provider uses SGLang's native HTTP APIs:
-- `/generate` for text generation (returns output_ids directly)
-
-It uses a HuggingFace tokenizer for:
-- Applying chat templates (via tokenizer.apply_chat_template())
-- Tokenizing prompts and tool results
-
-This eliminates retokenization drift in RL training by maintaining token IDs
-throughout the rollout instead of converting text back to tokens.
-"""
+"""SGLang model provider with token-in/token-out support."""
 
 from __future__ import annotations
 

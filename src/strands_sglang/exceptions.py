@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Custom exceptions for SGLangClient.
-
-These exceptions form the contract between client.py and sglang.py,
-centralizing all error classification in the client layer so that
-sglang.py never inspects raw HTTP status codes or response bodies.
-"""
+"""Custom exceptions for SGLangClient."""
 
 
 class SGLangClientError(Exception):
