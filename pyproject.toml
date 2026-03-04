@@ -46,9 +46,11 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
     "pytest-mock>=3.0.0",
+    "pytest-timeout>=2.0.0",
     # Linting & Build
     "pre-commit",
-    "ruff>=0.1.0",
+    "ruff>=0.6.0",
+    "mypy>=1.10.0",
     "twine>=4.0.0",
     "build>=0.10.0",
     # Development
@@ -65,11 +67,35 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+timeout = 90
 markers = ["integration: tests that require a running SGLang server"]
 
 [tool.ruff]
 line-length = 120
+fix = true
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W"]
+select = ["B", "D", "E", "F", "G", "I", "LOG", "N", "UP", "W"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"!src/**/*.py" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true
+exclude = ["tests/"]
+
+[tool.codespell]
+skip = "*.json,*.jsonl"
