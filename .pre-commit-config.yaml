@@ -1,15 +1,13 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.4
+    rev: v0.15.4
     hooks:
       - id: ruff
         args: [--fix]
-        files: ^(src/strands_sglang/|scripts/|dev/).*\.py$
       - id: ruff-format
-        files: ^(src/strands_sglang/|scripts/|dev/).*\.py$
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: check-yaml
       - id: check-case-conflict
@@ -17,9 +15,45 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=1000']
       - id: requirements-txt-fixer
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+        additional_dependencies:
+          - tomli
+
+  - repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.5.6
+    hooks:
+      - id: insert-license
+        files: \.py$
+        args:
+          - --license-filepath=.license-header.txt
+          - --comment-style=#
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: Type check (mypy)
+        entry: mypy src/strands_sglang
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-commit]
+      - id: unit-tests
+        name: Unit tests
+        entry: pytest tests/unit/ -x -q
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-commit]
 
   - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v3.4.0
+    rev: v4.4.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
