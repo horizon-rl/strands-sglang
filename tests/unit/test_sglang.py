@@ -489,17 +489,13 @@ class TestValidateTokenizer:
 
         parser.validate_tokenizer.assert_called_once_with(mock_tokenizer)
 
-    async def test_deepseek_parser_sets_skip_special_tokens(self, mock_tokenizer):
-        """stream() passes skip_special_tokens=False to client.generate for DeepSeek."""
+    async def test_skip_special_tokens_defaults_to_false(self, mock_tokenizer):
+        """stream() passes skip_special_tokens=False to client.generate by default."""
         from unittest.mock import AsyncMock
 
-        from strands_sglang.tool_parsers import DeepSeekV32ToolParser
-
-        mock_tokenizer._dsv32_encoding_attached = True
         client = SGLangClient(base_url="http://localhost:30000")
         client.generate = AsyncMock(return_value={"text": "hello", "output_ids": [1, 2], "meta_info": {}})
-        parser = DeepSeekV32ToolParser()
-        model = SGLangModel(client=client, tokenizer=mock_tokenizer, tool_parser=parser)
+        model = SGLangModel(client=client, tokenizer=mock_tokenizer)
 
         messages = [{"role": "user", "content": [{"text": "hi"}]}]
         async for _ in model.stream(messages):

@@ -42,7 +42,7 @@ from typing_extensions import Unpack, override
 from .client import SGLangClient
 from .exceptions import SGLangContextLengthError, SGLangThrottledError
 from .token import TokenManager
-from .tool_parsers import DeepSeekV32ToolParser, HermesToolParser, ToolParser, ToolParseResult
+from .tool_parsers import HermesToolParser, ToolParser, ToolParseResult
 
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizerBase, ProcessorMixin
@@ -392,8 +392,7 @@ class SGLangModel(Model):
         tools = self.format_tool_specs(tool_specs) if tool_specs else None
         config = self.get_config()
         sampling_params: dict[str, Any] = dict(config.get("sampling_params") or {})
-        if isinstance(self.tool_parser, DeepSeekV32ToolParser):
-            sampling_params.setdefault("skip_special_tokens", False)
+        sampling_params.setdefault("skip_special_tokens", False)
         return_logprob = config.get("return_logprob", True)
         new_input_tokens = self.tokenize_prompt_messages(messages, system_prompt, tools=tools)
         # Tracking token IDs in token_manager to ensure the token-in feature
