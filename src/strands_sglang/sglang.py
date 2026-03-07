@@ -235,11 +235,9 @@ class SGLangModel(Model):
         messages: Messages,
         system_prompt: str | None = None,
         tools: list[dict] | None = None,
+        add_generation_prompt: bool = True,
     ) -> str:
-        """Format messages into a prompt ready for model generation.
-
-        Applies the HuggingFace chat template with `add_generation_prompt=True`,
-        which appends the assistant turn prefix for the model to continue.
+        """Format messages into a prompt string using the HuggingFace chat template.
 
         The result is manually tokenized (not model-generated) and added to
         the token trajectory with `loss_mask=False`.
@@ -251,7 +249,7 @@ class SGLangModel(Model):
             self.tokenizer.apply_chat_template(
                 conversation=chat_messages,
                 tools=cast(list[dict | Callable], tools),
-                add_generation_prompt=True,
+                add_generation_prompt=add_generation_prompt,
                 tokenize=False,
                 enable_thinking=self.config.get("enable_thinking"),
             )
@@ -301,10 +299,14 @@ class SGLangModel(Model):
             formatted = self.format_prompt(messages, system_prompt, tools=tools)
             return _tokenize(formatted)
 
-        # Subsequent calls: only new messages
+        # Subsequent calls: only new messages (prepend fake user to satisfy chat template assumptions).
+        # See: https://github.com/horizon-rl/strands-sglang/issues/29
         if len(messages) > self._processed_message_count:
             new_messages = self._sort_tool_results(messages[self._processed_message_count :])
-            formatted = self.tool_parser.message_separator + self.format_prompt(new_messages)
+            fake: Messages = [{"role": "user", "content": [{"text": "ONLY FOR INCREMENTAL TOKENIZATION"}]}]
+            full = self.format_prompt(fake + new_messages)
+            prefix = self.format_prompt(fake, add_generation_prompt=False)
+            formatted = self.tool_parser.message_separator + full[len(prefix) :]
             return _tokenize(formatted)
 
         return None

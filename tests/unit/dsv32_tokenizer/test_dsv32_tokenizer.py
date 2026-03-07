@@ -167,29 +167,41 @@ class TestFullConversation:
 
 
 class TestIncrementalPath:
-    """Tests for incremental (tool-result-only) formatting.
+    """Tests for incremental (fake user + tool results) formatting.
 
-    The incremental path produces the same format as encode_messages()
-    renders tool messages, verified against the module's template strings.
+    The caller prepends a fake user message to satisfy the incremental path
+    detection: conversation[0] is user, conversation[1:] are all tool messages.
+    See: https://github.com/horizon-rl/strands-sglang/issues/29
     """
 
-    def test_single_tool_result(self, patched_tokenizer):
+    FAKE_USER = {"role": "user", "content": "ONLY FOR INCREMENTAL TOKENIZATION"}
+
+    def _fake_user_prefix(self, encoding_module, thinking_mode="thinking"):
+        """Return the prefix that encode_messages produces for the fake user."""
+        return encoding_module.encode_messages([self.FAKE_USER], thinking_mode=thinking_mode)
+
+    def test_single_tool_result(self, patched_tokenizer, encoding_module):
         """Single tool result matches expected format."""
-        messages = [{"role": "tool", "content": "result data"}]
+        messages = [self.FAKE_USER, {"role": "tool", "content": "result data"}]
         result = patched_tokenizer.apply_chat_template(messages, enable_thinking=True)
 
-        assert result == "\n\n<function_results>\n<result>result data</result>\n</function_results>\n\n<think>"
+        prefix = self._fake_user_prefix(encoding_module)
+        assert result == prefix + "\n\n<function_results>\n<result>result data</result>\n</function_results>\n\n<think>"
 
-    def test_multiple_tool_results(self, patched_tokenizer):
+    def test_multiple_tool_results(self, patched_tokenizer, encoding_module):
         """Multiple tool results each get their own <result> tag."""
         messages = [
+            self.FAKE_USER,
             {"role": "tool", "content": "result1"},
             {"role": "tool", "content": "result2"},
         ]
         result = patched_tokenizer.apply_chat_template(messages, enable_thinking=True)
 
+        prefix = self._fake_user_prefix(encoding_module)
         expected = (
-            "\n\n<function_results>\n<result>result1</result>\n<result>result2</result>\n</function_results>\n\n<think>"
+            prefix
+            + "\n\n<function_results>\n<result>result1</result>\n<result>result2</result>\n</function_results>"
+            + "\n\n<think>"
         )
         assert result == expected
 
@@ -197,7 +209,7 @@ class TestIncrementalPath:
         """Incremental format uses the same template strings as the encoding module."""
         content = "test content"
         result = patched_tokenizer.apply_chat_template(
-            [{"role": "tool", "content": content}],
+            [self.FAKE_USER, {"role": "tool", "content": content}],
             enable_thinking=True,
         )
 
@@ -208,7 +220,7 @@ class TestIncrementalPath:
     def test_thinking_mode_appends_think_start(self, patched_tokenizer):
         """Thinking mode appends <think> for generation prompt."""
         result = patched_tokenizer.apply_chat_template(
-            [{"role": "tool", "content": "ok"}],
+            [self.FAKE_USER, {"role": "tool", "content": "ok"}],
             enable_thinking=True,
         )
         assert result.endswith("<think>")
@@ -216,24 +228,30 @@ class TestIncrementalPath:
     def test_chat_mode_appends_think_end(self, patched_tokenizer):
         """Chat mode appends </think> — matches DeepSeek's encoding module behavior."""
         result = patched_tokenizer.apply_chat_template(
-            [{"role": "tool", "content": "ok"}],
+            [self.FAKE_USER, {"role": "tool", "content": "ok"}],
             enable_thinking=False,
         )
         assert result.endswith("</think>")
 
-    def test_no_generation_prompt(self, patched_tokenizer):
-        """No thinking tag without add_generation_prompt."""
+    def test_no_generation_prompt(self, patched_tokenizer, encoding_module):
+        """No thinking tag appended after tool results without add_generation_prompt."""
         result = patched_tokenizer.apply_chat_template(
-            [{"role": "tool", "content": "ok"}],
+            [self.FAKE_USER, {"role": "tool", "content": "ok"}],
             add_generation_prompt=False,
         )
         assert result.endswith("</function_results>")
-        assert "<think>" not in result
-        assert "</think>" not in result
+        # The fake user prefix contains <think> from encode_messages, but no thinking tag after tool results
+        prefix = self._fake_user_prefix(encoding_module)
+        incremental = result[len(prefix) :]
+        assert "<think>" not in incremental
+        assert "</think>" not in incremental
 
     def test_empty_content_defaults_to_empty_string(self, patched_tokenizer):
         """Tool result with missing content uses empty string."""
-        result = patched_tokenizer.apply_chat_template([{"role": "tool"}], enable_thinking=True)
+        result = patched_tokenizer.apply_chat_template(
+            [self.FAKE_USER, {"role": "tool"}],
+            enable_thinking=True,
+        )
         assert "<result></result>" in result
 
     def test_mixed_roles_uses_full_path(self, patched_tokenizer, encoding_module):
@@ -278,7 +296,7 @@ class TestAttachDsv32Encoding:
         """No warning when no extra kwargs passed."""
         with caplog.at_level(logging.WARNING, logger="strands_sglang.utils"):
             patched_tokenizer.apply_chat_template(
-                conversation=[{"role": "tool", "content": "ok"}],
+                conversation=[{"role": "user", "content": ""}, {"role": "tool", "content": "ok"}],
             )
 
         assert "doesn't support" not in caplog.text

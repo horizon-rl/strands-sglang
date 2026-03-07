@@ -43,6 +43,12 @@ def pytest_addoption(parser):
         default=os.environ.get("SGLANG_BASE_URL", "http://localhost:30000"),
         help="SGLang server URL (default: http://localhost:30000 or SGLANG_BASE_URL env var)",
     )
+    parser.addoption(
+        "--tool-parser",
+        action="store",
+        default=os.environ.get("TOOL_PARSER", "hermes"),
+        help="Tool parser name: hermes, qwen_xml, glm, kimi_k2, deepseek_v32 (default: hermes or TOOL_PARSER env var)",
+    )
 
 
 def pytest_configure(config):

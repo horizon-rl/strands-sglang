@@ -31,7 +31,7 @@ from strands_tools import calculator
 
 from strands_sglang import MaxToolCallsReachedError, MaxToolIterationsReachedError, SGLangModel, ToolLimiter
 from strands_sglang.client import SGLangClient
-from strands_sglang.tool_parsers import HermesToolParser
+from strands_sglang.tool_parsers import get_tool_parser
 
 
 def assert_max_iterations_reached(exc_info, expected_count: int | None = None):
@@ -80,13 +80,13 @@ MULTI_CALC_PROBLEM = "Calculate 10+5, 20+10, and 30+15 using the calculator."
 
 
 @pytest.fixture
-async def fresh_model(tokenizer, sglang_base_url):
+async def fresh_model(tokenizer, sglang_base_url, tool_parser_name):
     """Create a fresh SGLangModel for each test."""
     client = SGLangClient(base_url=sglang_base_url)
     yield SGLangModel(
         client=client,
         tokenizer=tokenizer,
-        tool_parser=HermesToolParser(),
+        tool_parser=get_tool_parser(tool_parser_name),
         sampling_params={"max_new_tokens": 32768},
     )
     await client.close()

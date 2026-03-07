@@ -140,17 +140,22 @@ def attach_dsv32_encoding(tokenizer: PreTrainedTokenizerBase) -> None:
 
         thinking_mode = "thinking" if enable_thinking else "chat"
 
-        # Incremental path: only tool results, no system/user context
-        if conversation and all(m.get("role") == "tool" for m in conversation):
+        # Incremental path: fake user prefix + tool results.
+        # See: https://github.com/horizon-rl/strands-sglang/issues/29
+        if (
+            len(conversation) >= 2
+            and conversation[0].get("role") == "user"
+            and all(m.get("role") == "tool" for m in conversation[1:])
+        ):
             result = "\n\n<function_results>"
-            for msg in conversation:
+            for msg in conversation[1:]:
                 if msg.get("role") == "tool":
                     result += "\n<result>" + msg.get("content", "") + "</result>"
             result += "\n</function_results>"
             if add_generation_prompt:
                 gen = "<think>" if thinking_mode == "thinking" else "</think>"
                 result += "\n\n" + gen
-            return result
+            return str(module.encode_messages([conversation[0]], thinking_mode=thinking_mode)) + result
 
         # Attach tools to system message (encoding module reads them from msg.get("tools"))
         messages = list(conversation)

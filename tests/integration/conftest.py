@@ -19,6 +19,7 @@ and require a running SGLang server.
 
 Usage:
     pytest tests/integration/ --sglang-base-url=http://localhost:30000
+    pytest tests/integration/ --sglang-base-url=http://localhost:30000 --tool-parser=qwen_xml
 
 The model ID is auto-detected from the server's /get_model_info endpoint.
 """
@@ -29,7 +30,7 @@ from transformers import AutoProcessor, AutoTokenizer, ProcessorMixin
 
 from strands_sglang import SGLangModel
 from strands_sglang.client import SGLangClient
-from strands_sglang.tool_parsers import HermesToolParser
+from strands_sglang.tool_parsers import get_tool_parser
 
 # Mark all tests in this directory as integration tests
 pytestmark = pytest.mark.integration
@@ -79,6 +80,12 @@ def sglang_base_url(sglang_server_info):
     return sglang_server_info["base_url"]
 
 
+@pytest.fixture(scope="session")
+def tool_parser_name(request):
+    """Get tool parser name from CLI option."""
+    return request.config.getoption("--tool-parser")
+
+
 @pytest.fixture(scope="module")
 def tokenizer(sglang_server_info):
     """Load tokenizer for the configured model."""
@@ -87,13 +94,13 @@ def tokenizer(sglang_server_info):
 
 
 @pytest.fixture
-async def model(tokenizer, sglang_base_url):
+async def model(tokenizer, sglang_base_url, tool_parser_name):
     """Create fresh SGLangModel for each test (perfect isolation)."""
     client = SGLangClient(base_url=sglang_base_url)
     yield SGLangModel(
         client=client,
         tokenizer=tokenizer,
-        tool_parser=HermesToolParser(),
+        tool_parser=get_tool_parser(tool_parser_name),
         sampling_params={"max_new_tokens": 32768},
     )
     await client.close()
@@ -115,7 +122,7 @@ def processor(sglang_server_info):
 
 
 @pytest.fixture
-async def vlm_model(processor, sglang_base_url):
+async def vlm_model(processor, sglang_base_url, tool_parser_name):
     """Create fresh SGLangModel with processor for VLM tests."""
     if processor is None:
         pytest.skip("Server is running a text-only model")
@@ -123,7 +130,7 @@ async def vlm_model(processor, sglang_base_url):
     yield SGLangModel(
         client=client,
         processor=processor,
-        tool_parser=HermesToolParser(),
+        tool_parser=get_tool_parser(tool_parser_name),
         sampling_params={"max_new_tokens": 32768},
     )
     await client.close()

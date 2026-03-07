@@ -28,7 +28,7 @@ from strands_tools import calculator
 
 from strands_sglang import SGLangModel
 from strands_sglang.client import SGLangClient
-from strands_sglang.tool_parsers import HermesToolParser
+from strands_sglang.tool_parsers import get_tool_parser
 
 SYSTEM_PROMPT = """You are a math tutor. Always use the calculator tool to solve problems.
 
@@ -147,7 +147,7 @@ MATH500_PROBLEMS = [
 
 
 @pytest.fixture
-async def model(tokenizer, sglang_base_url):
+async def model(tokenizer, sglang_base_url, tool_parser_name):
     """Create fresh SGLangModel for each test (perfect isolation).
 
     Overrides the base model fixture to add max_new_tokens limit.
@@ -156,7 +156,7 @@ async def model(tokenizer, sglang_base_url):
     yield SGLangModel(
         client=client,
         tokenizer=tokenizer,
-        tool_parser=HermesToolParser(),
+        tool_parser=get_tool_parser(tool_parser_name),
         sampling_params={"max_new_tokens": 32768},  # High limit for thinking models
     )
     await client.close()
