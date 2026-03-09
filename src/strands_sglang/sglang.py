@@ -410,7 +410,7 @@ class SGLangModel(Model):
                 input_ids=input_ids,
                 sampling_params=sampling_params,
                 return_logprob=return_logprob,
-                logprob_start_len=0 if return_logprob else None,
+                logprob_start_len=len(self.token_manager.token_ids) if return_logprob else None,
                 image_data=self.image_data or None,
             )
 

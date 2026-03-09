@@ -156,31 +156,54 @@ class TestTITO:
         assert total_tokens == len(model.token_manager.loss_mask)
         assert total_tokens == len(model.token_manager.logprobs)
 
-    async def test_logprobs_no_none_when_return_logprob_enabled(self, model):
-        """Response logprobs should be present when return_logprob=True (regression test for v0.2.0).
+    async def test_logprobs_no_none_in_multi_turn_tool_use(self, model, calculator_tool):
+        """Response logprobs must be present across multi-turn tool use (regression test for logprob_start_len).
 
-        Note: Prompt tokens have None logprobs by design (loss_mask=0).
-        The first output token may also have None logprob depending on SGLang version.
+        When `logprob_start_len` is set incorrectly (e.g., 0), SGLang recomputes logprobs for the entire prefix
+        on every turn, defeating KV cache. The correct value (`len(token_manager.token_ids)`) skips already-tracked
+        tokens. This test verifies logprobs are still complete after that optimization.
         """
-        # Ensure return_logprob is enabled (default is True)
         assert model.config.get("return_logprob", True) is True
 
-        messages = [{"role": "user", "content": [{"text": "Say hello"}]}]
-        async for _ in model.stream(messages):
+        system_prompt = "You are a calculator. Use the calculator tool for ALL math. Never compute in your head."
+
+        # Turn 1: user asks, model should call calculator
+        messages = [{"role": "user", "content": [{"text": "What is 5 * 8?"}]}]
+        async for _ in model.stream(messages, tool_specs=[calculator_tool], system_prompt=system_prompt):
             pass
 
-        # Get response tokens only (loss_mask=1), excluding prompt tokens
-        tokens = model.token_manager.tokens
-        response_logprobs = [t.logprob for t in tokens if t.loss_mask]
-        assert len(response_logprobs) > 0, "Should have response tokens after generation"
-
-        # First output token may have None logprob (SGLang behavior), rest should have logprobs
-        non_first_logprobs = response_logprobs[1:]
-        none_count = non_first_logprobs.count(None)
-        assert none_count == 0, (
-            f"Response logprobs (after first token) should not contain None when return_logprob=True. "
-            f"Found {none_count} None values out of {len(non_first_logprobs)} total."
+        # Inject tool result for turn 2
+        messages.append(
+            {
+                "role": "assistant",
+                "content": [
+                    {"toolUse": {"toolUseId": "call_1", "name": "calculator", "input": {"expression": "5 * 8"}}}
+                ],
+            }
         )
+        messages.append(
+            {"role": "user", "content": [{"toolResult": {"toolUseId": "call_1", "content": [{"text": "40"}]}}]}
+        )
+
+        # Turn 2: model responds after tool result
+        async for _ in model.stream(messages, tool_specs=[calculator_tool], system_prompt=system_prompt):
+            pass
+
+        # Should have at least 4 segments: prompt, response, tool-result prompt, response
+        segment_info = model.token_manager.segment_info
+        assert len(segment_info) >= 4, f"Expected >=4 segments for multi-turn tool use, got {len(segment_info)}"
+        assert sum(1 for is_resp, _ in segment_info if is_resp) >= 2, "Should have at least 2 response segments"
+
+        # Verify no None logprobs in any response segment
+        for i, (is_response, _) in enumerate(segment_info):
+            if not is_response:
+                continue
+            segment_logprobs = [t.logprob for t in model.token_manager.segments[i]]
+            none_count = sum(1 for lp in segment_logprobs if lp is None)
+            assert none_count == 0, (
+                f"Response segment {i} has {none_count} None logprobs out of {len(segment_logprobs)} tokens. "
+                f"logprob_start_len may be incorrect."
+            )
 
     async def test_incremental_tokenization(self, model):
         """Subsequent calls only tokenize new messages."""

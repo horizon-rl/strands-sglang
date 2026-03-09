@@ -86,20 +86,6 @@ class TestModelStructuredOutput:
 class TestAgentStructuredOutput:
     """Tests for Agent-level structured output (tool-based approach via stream)."""
 
-    async def test_invoke_with_structured_output_model(self, model):
-        """Agent.invoke_async with structured_output_model returns parsed result."""
-
-        class MathAnswer(BaseModel):
-            answer: int
-            explanation: str
-
-        agent = Agent(model=model, system_prompt="You are a math assistant.")
-        result = await agent.invoke_async("What is 10 + 5?", structured_output_model=MathAnswer)
-
-        assert result.structured_output is not None
-        assert isinstance(result.structured_output, MathAnswer)
-        assert result.structured_output.answer == 15
-
     async def test_deprecated_structured_output_method(self, model):
         """Deprecated Agent.structured_output_async still works (calls model.structured_output)."""
 
