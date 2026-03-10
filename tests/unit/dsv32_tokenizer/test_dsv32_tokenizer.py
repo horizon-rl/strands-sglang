@@ -168,10 +168,10 @@ class TestFullConversation:
 class TestIncrementalPath:
     """Tests for incremental tokenization with DSV32.
 
-    `tokenize_prompt_messages` builds [fake_system, fake_user, prev_assistant, tool_results...]
-    and calls `apply_chat_template` twice (full and prefix) for subtraction.
-    `_to_dsv32_format` extracts `reasoning_content` and `tool_calls` from assistant content
-    so that `encode_messages` can handle the full conversation.
+    `tokenize_prompt_messages` builds [fake_system, fake_user] + new_messages and calls
+    `apply_chat_template` twice (full and prefix) for subtraction. The DSV32 wrapper
+    extracts `reasoning_content` and `tool_calls` from inline assistant content so that
+    `encode_messages` can handle the full conversation.
     """
 
     # Realistic assistant content after format_messages: raw model output with

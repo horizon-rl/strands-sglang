@@ -281,8 +281,7 @@ class SGLangModel(Model):
         """Tokenize prompt messages for the next generation call.
 
         - First call: tokenizes full prompt with system prompt and tools.
-        - Subsequent calls: uses a fake prefix (system + user + previous assistant) to give
-        the chat template enough context (BOS, `last_query_index`, boundary formatting),
+        - Subsequent calls: uses a fake prefix (system + user) for boundary formatting,
         then subtracts it to extract only incremental tokens.
         """
         # First call: full prompt with tools
@@ -301,7 +300,6 @@ class SGLangModel(Model):
             fake_messages = [
                 {"role": "system", "content": [{"text": "FAKE SYSTEM PROMPT"}]},
                 {"role": "user", "content": [{"text": "FAKE USER MESSAGE"}]},
-                messages[self.message_count - 1],
             ]
             fake_hf_messages = self.format_messages(cast(Messages, fake_messages), is_multimodal=self.is_multimodal)
             full_prompt = self.apply_chat_template(fake_hf_messages + new_hf_messages, add_generation_prompt=True)
