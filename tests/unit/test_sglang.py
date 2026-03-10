@@ -461,7 +461,12 @@ class TestValidateTokenizer:
             return_value={
                 "text": "hello",
                 "output_ids": [1, 2],
-                "meta_info": {"prompt_tokens": 5, "completion_tokens": 2, "finish_reason": {"type": "stop"}},
+                "meta_info": {
+                    "prompt_tokens": 5,
+                    "completion_tokens": 2,
+                    "finish_reason": {"type": "stop"},
+                    "e2e_latency": 0.1,
+                },
             }
         )
         model = SGLangModel(client=client, tokenizer=mock_tokenizer)

@@ -381,11 +381,11 @@ class SGLangModel(Model):
         # Tracking token IDs in token_manager to ensure the token-in feature
         input_ids = self.token_manager.token_ids + new_input_ids
 
-        # Start message
+        # Assistant message start
         yield {"messageStart": {"role": "assistant"}}
         yield {"contentBlockStart": {"start": {}}}
 
-        # Call SGLangClient (non-streaming POST for better parallelism)
+        # Call SGLang's `/generate` endpoint
         try:
             response = await self.client.generate(
                 input_ids=input_ids,
@@ -402,7 +402,7 @@ class SGLangModel(Model):
             input_token_logprobs = meta_info.get("input_token_logprobs")
             output_token_logprobs = meta_info.get("output_token_logprobs")
 
-            # Yield text as single delta (non-streaming gives complete text at once)
+            # Assistant message content delta (single delta for non-streaming)
             yield {"contentBlockDelta": {"delta": {"text": text}}}
 
         except SGLangContextLengthError as e:
@@ -421,31 +421,29 @@ class SGLangModel(Model):
         )
         self.message_count = len(messages) + 1
 
-        # End text block, start tool use blocks if there are any tool calls
+        # Assistant message content stop
         yield {"contentBlockStop": {}}
 
-        # Parse tool calls and yield events
+        # Assistant message tool use content - start, delta, stop
         parsed_tool_calls = self.tool_parser.parse(text)
         for event in self._yield_tool_use_events(parsed_tool_calls):
             yield event
 
-        # Determine stop reason
+        # Assistant message stop
         stop_reason: str = "tool_use" if parsed_tool_calls else "end_turn"
         if meta_info["finish_reason"]["type"] == "length":
             stop_reason = "max_tokens"
         yield {"messageStop": {"stopReason": cast(StopReason, stop_reason)}}
 
-        # Yield usage metadata
-        prompt_tokens = meta_info["prompt_tokens"]
-        completion_tokens = meta_info["completion_tokens"]
+        # Assistant message usage metadata
         yield {
             "metadata": {
                 "usage": {
-                    "inputTokens": prompt_tokens,
-                    "outputTokens": completion_tokens,
-                    "totalTokens": prompt_tokens + completion_tokens,
+                    "inputTokens": meta_info["prompt_tokens"],
+                    "outputTokens": meta_info["completion_tokens"],
+                    "totalTokens": meta_info["prompt_tokens"] + meta_info["completion_tokens"],
                 },
-                "metrics": {"latencyMs": int(float(meta_info.get("e2e_latency") or 0) * 1000)},
+                "metrics": {"latencyMs": int(meta_info["e2e_latency"] * 1000)},
             }
         }
 
