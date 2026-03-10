@@ -457,7 +457,13 @@ class TestValidateTokenizer:
         from unittest.mock import AsyncMock
 
         client = SGLangClient(base_url="http://localhost:30000")
-        client.generate = AsyncMock(return_value={"text": "hello", "output_ids": [1, 2], "meta_info": {}})
+        client.generate = AsyncMock(
+            return_value={
+                "text": "hello",
+                "output_ids": [1, 2],
+                "meta_info": {"prompt_tokens": 5, "completion_tokens": 2, "finish_reason": {"type": "stop"}},
+            }
+        )
         model = SGLangModel(client=client, tokenizer=mock_tokenizer)
         model.__dict__["is_multimodal"] = False
 

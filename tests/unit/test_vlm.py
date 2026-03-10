@@ -366,7 +366,11 @@ def _async_mock_generate():
     mock = MagicMock()
 
     async def _generate(**kwargs):
-        return {"text": "response", "output_ids": [100, 101], "meta_info": {}}
+        return {
+            "text": "response",
+            "output_ids": [100, 101],
+            "meta_info": {"prompt_tokens": 3, "completion_tokens": 2, "finish_reason": {"type": "stop"}},
+        }
 
     mock.side_effect = _generate
     return mock

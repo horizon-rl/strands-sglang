@@ -431,26 +431,23 @@ class SGLangModel(Model):
 
         # Determine stop reason
         stop_reason: str = "tool_use" if parsed_tool_calls else "end_turn"
-        if meta_info and isinstance(meta_info.get("finish_reason"), dict):
-            if meta_info["finish_reason"].get("type") == "length":
-                stop_reason = "max_tokens"
-
+        if meta_info["finish_reason"]["type"] == "length":
+            stop_reason = "max_tokens"
         yield {"messageStop": {"stopReason": cast(StopReason, stop_reason)}}
 
         # Yield usage metadata
-        if meta_info:
-            prompt_tokens = int(meta_info.get("prompt_tokens") or 0)
-            completion_tokens = int(meta_info.get("completion_tokens") or 0)
-            yield {
-                "metadata": {
-                    "usage": {
-                        "inputTokens": prompt_tokens,
-                        "outputTokens": completion_tokens,
-                        "totalTokens": prompt_tokens + completion_tokens,
-                    },
-                    "metrics": {"latencyMs": int(float(meta_info.get("e2e_latency") or 0) * 1000)},
-                }
+        prompt_tokens = meta_info["prompt_tokens"]
+        completion_tokens = meta_info["completion_tokens"]
+        yield {
+            "metadata": {
+                "usage": {
+                    "inputTokens": prompt_tokens,
+                    "outputTokens": completion_tokens,
+                    "totalTokens": prompt_tokens + completion_tokens,
+                },
+                "metrics": {"latencyMs": int(float(meta_info.get("e2e_latency") or 0) * 1000)},
             }
+        }
 
     @override
     async def structured_output(
