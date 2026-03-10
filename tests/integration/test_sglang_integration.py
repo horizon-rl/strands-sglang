@@ -66,6 +66,11 @@ class TestStreamBasic:
         assert "metadata" in events[-1]
         metadata = events[-1]["metadata"]
         assert "usage" in metadata
+        usage = metadata["usage"]
+        assert "inputTokens" in usage
+        assert "outputTokens" in usage
+        assert "totalTokens" in usage
+        assert "cacheReadInputTokens" in usage
 
 
 class TestStreamWithTools:
@@ -210,6 +215,38 @@ class TestTITO:
                 f"{seg_type} segment {i} has {none_count} None logprobs out of {len(segment_logprobs)} tokens. "
                 f"logprob_start_len may be incorrect."
             )
+
+    async def test_kv_cache_hit_in_multi_turn(self, model, calculator_tool):
+        """Turn 2 should hit the radix KV cache for the prefix from turn 1."""
+        system_prompt = "You are a calculator. Use the calculator tool for ALL math. Never compute in your head."
+
+        # Turn 1
+        messages = [{"role": "user", "content": [{"text": "What is 5 * 8?"}]}]
+        async for _ in model.stream(messages, tool_specs=[calculator_tool], system_prompt=system_prompt):
+            pass
+
+        # Inject tool result for turn 2
+        messages.append(
+            {
+                "role": "assistant",
+                "content": [
+                    {"text": '<tool_call>\n{"name": "calculator", "arguments": {"expression": "5 * 8"}}\n</tool_call>'},
+                    {"toolUse": {"toolUseId": "call_1", "name": "calculator", "input": {"expression": "5 * 8"}}},
+                ],
+            }
+        )
+        messages.append(
+            {"role": "user", "content": [{"toolResult": {"toolUseId": "call_1", "content": [{"text": "40"}]}}]}
+        )
+
+        # Turn 2: collect metadata
+        events = []
+        async for event in model.stream(messages, tool_specs=[calculator_tool], system_prompt=system_prompt):
+            events.append(event)
+
+        metadata = next(e["metadata"] for e in events if "metadata" in e)
+        cached = metadata["usage"]["cacheReadInputTokens"]
+        assert cached > 0, f"Expected radix cache hit on turn 2, got cacheReadInputTokens={cached}"
 
     async def test_incremental_tokenization(self, model):
         """Subsequent calls only tokenize new messages."""

@@ -435,6 +435,7 @@ class SGLangModel(Model):
                     "inputTokens": meta_info["prompt_tokens"],
                     "outputTokens": meta_info["completion_tokens"],
                     "totalTokens": meta_info["prompt_tokens"] + meta_info["completion_tokens"],
+                    "cacheReadInputTokens": meta_info["cached_tokens"],
                 },
                 "metrics": {"latencyMs": int(meta_info["e2e_latency"] * 1000)},
             }

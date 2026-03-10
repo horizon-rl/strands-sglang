@@ -445,6 +445,7 @@ class TestValidateTokenizer:
                 "meta_info": {
                     "prompt_tokens": 5,
                     "completion_tokens": 2,
+                    "cached_tokens": 0,
                     "finish_reason": {"type": "stop"},
                     "e2e_latency": 0.1,
                 },
