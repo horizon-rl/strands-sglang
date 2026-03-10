@@ -20,7 +20,6 @@ https://huggingface.co/deepseek-ai/DeepSeek-V3.2/tree/main/encoding
 
 import importlib.util
 import json
-import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -167,95 +166,128 @@ class TestFullConversation:
 
 
 class TestIncrementalPath:
-    """Tests for incremental (fake user + tool results) formatting.
+    """Tests for incremental tokenization with DSV32.
 
-    The caller prepends a fake user message to satisfy the incremental path
-    detection: conversation[0] is user, conversation[1:] are all tool messages.
-    See: https://github.com/horizon-rl/strands-sglang/issues/29
+    `tokenize_prompt_messages` builds [fake_system, fake_user, prev_assistant, tool_results...]
+    and calls `apply_chat_template` twice (full and prefix) for subtraction.
+    `_to_dsv32_format` extracts `reasoning_content` and `tool_calls` from assistant content
+    so that `encode_messages` can handle the full conversation.
     """
 
-    FAKE_USER = {"role": "user", "content": "ONLY FOR INCREMENTAL TOKENIZATION"}
+    # Realistic assistant content after format_messages: raw model output with
+    # thinking tags and DSML tool calls inline (no separate fields).
+    ASSISTANT_WITH_TOOL_CALL = {
+        "role": "assistant",
+        "content": (
+            "<think>I need to calculate this.</think>"
+            "Let me compute that."
+            "\n\n<｜DSML｜function_calls>"
+            '\n<｜DSML｜invoke name="calculator">'
+            '\n<｜DSML｜parameter name="expression" string="true">5 * 8</｜DSML｜parameter>'
+            "\n</｜DSML｜invoke>"
+            "\n</｜DSML｜function_calls>"
+        ),
+    }
 
-    def _fake_user_prefix(self, encoding_module, thinking_mode="thinking"):
-        """Return the prefix that encode_messages produces for the fake user."""
-        return encoding_module.encode_messages([self.FAKE_USER], thinking_mode=thinking_mode)
+    FAKE_PREFIX = [
+        {"role": "system", "content": "FAKE SYSTEM PROMPT"},
+        {"role": "user", "content": "FAKE USER MESSAGE"},
+    ]
 
-    def test_single_tool_result(self, patched_tokenizer, encoding_module):
-        """Single tool result matches expected format."""
-        messages = [self.FAKE_USER, {"role": "tool", "content": "result data"}]
-        result = patched_tokenizer.apply_chat_template(messages, enable_thinking=True)
+    def test_prefix_subtraction_single_tool_result(self, patched_tokenizer):
+        """Prefix subtraction yields tool result portion for single tool result."""
+        prefix_msgs = self.FAKE_PREFIX + [self.ASSISTANT_WITH_TOOL_CALL]
+        full_msgs = prefix_msgs + [{"role": "tool", "content": "42"}]
 
-        prefix = self._fake_user_prefix(encoding_module)
-        assert result == prefix + "\n\n<function_results>\n<result>result data</result>\n</function_results>\n\n<think>"
+        prefix = patched_tokenizer.apply_chat_template(prefix_msgs, enable_thinking=True)
+        full = patched_tokenizer.apply_chat_template(full_msgs, enable_thinking=True)
 
-    def test_multiple_tool_results(self, patched_tokenizer, encoding_module):
-        """Multiple tool results each get their own <result> tag."""
-        messages = [
-            self.FAKE_USER,
+        incremental = full[len(prefix) :]
+        assert "<function_results>" in incremental
+        assert "<result>42</result>" in incremental
+        assert incremental.endswith("<think>")
+
+    def test_prefix_subtraction_multiple_tool_results(self, patched_tokenizer):
+        """Prefix subtraction yields all tool results (one per tool call)."""
+        # Assistant with TWO tool calls
+        assistant = {
+            "role": "assistant",
+            "content": (
+                "<think>I need two lookups.</think>"
+                "\n\n<｜DSML｜function_calls>"
+                '\n<｜DSML｜invoke name="search">'
+                '\n<｜DSML｜parameter name="q" string="true">cats</｜DSML｜parameter>'
+                "\n</｜DSML｜invoke>"
+                '\n<｜DSML｜invoke name="search">'
+                '\n<｜DSML｜parameter name="q" string="true">dogs</｜DSML｜parameter>'
+                "\n</｜DSML｜invoke>"
+                "\n</｜DSML｜function_calls>"
+            ),
+        }
+        prefix_msgs = self.FAKE_PREFIX + [assistant]
+        full_msgs = prefix_msgs + [
             {"role": "tool", "content": "result1"},
             {"role": "tool", "content": "result2"},
         ]
-        result = patched_tokenizer.apply_chat_template(messages, enable_thinking=True)
 
-        prefix = self._fake_user_prefix(encoding_module)
-        expected = (
-            prefix
-            + "\n\n<function_results>\n<result>result1</result>\n<result>result2</result>\n</function_results>"
-            + "\n\n<think>"
-        )
-        assert result == expected
+        prefix = patched_tokenizer.apply_chat_template(prefix_msgs, enable_thinking=True)
+        full = patched_tokenizer.apply_chat_template(full_msgs, enable_thinking=True)
+
+        incremental = full[len(prefix) :]
+        assert "<result>result1</result>" in incremental
+        assert "<result>result2</result>" in incremental
 
     def test_format_matches_module_templates(self, patched_tokenizer, encoding_module):
-        """Incremental format uses the same template strings as the encoding module."""
-        content = "test content"
-        result = patched_tokenizer.apply_chat_template(
-            [self.FAKE_USER, {"role": "tool", "content": content}],
-            enable_thinking=True,
-        )
+        """Tool results use the module's tool_output_template."""
+        prefix_msgs = self.FAKE_PREFIX + [self.ASSISTANT_WITH_TOOL_CALL]
+        full_msgs = prefix_msgs + [{"role": "tool", "content": "test content"}]
 
-        # Verify against the module's tool_output_template
-        expected_result_tag = encoding_module.tool_output_template.format(content=content)
-        assert expected_result_tag in result
+        result = patched_tokenizer.apply_chat_template(full_msgs, enable_thinking=True)
+
+        expected_tag = encoding_module.tool_output_template.format(content="test content")
+        assert expected_tag in result
 
     def test_thinking_mode_appends_think_start(self, patched_tokenizer):
-        """Thinking mode appends <think> for generation prompt."""
-        result = patched_tokenizer.apply_chat_template(
-            [self.FAKE_USER, {"role": "tool", "content": "ok"}],
-            enable_thinking=True,
-        )
+        """Thinking mode ends with <think> for generation prompt after tool results."""
+        full_msgs = self.FAKE_PREFIX + [self.ASSISTANT_WITH_TOOL_CALL, {"role": "tool", "content": "ok"}]
+        result = patched_tokenizer.apply_chat_template(full_msgs, enable_thinking=True)
         assert result.endswith("<think>")
 
     def test_chat_mode_appends_think_end(self, patched_tokenizer):
-        """Chat mode appends </think> — matches DeepSeek's encoding module behavior."""
-        result = patched_tokenizer.apply_chat_template(
-            [self.FAKE_USER, {"role": "tool", "content": "ok"}],
-            enable_thinking=False,
-        )
+        """Chat mode ends with </think> after tool results."""
+        full_msgs = self.FAKE_PREFIX + [self.ASSISTANT_WITH_TOOL_CALL, {"role": "tool", "content": "ok"}]
+        result = patched_tokenizer.apply_chat_template(full_msgs, enable_thinking=False)
         assert result.endswith("</think>")
 
-    def test_no_generation_prompt(self, patched_tokenizer, encoding_module):
-        """No thinking tag appended after tool results without add_generation_prompt."""
-        result = patched_tokenizer.apply_chat_template(
-            [self.FAKE_USER, {"role": "tool", "content": "ok"}],
-            add_generation_prompt=False,
-        )
-        assert result.endswith("</function_results>")
-        # The fake user prefix contains <think> from encode_messages, but no thinking tag after tool results
-        prefix = self._fake_user_prefix(encoding_module)
-        incremental = result[len(prefix) :]
-        assert "<think>" not in incremental
-        assert "</think>" not in incremental
+    def test_assistant_without_think_tags(self, patched_tokenizer):
+        """Assistant content without <think> tags is handled (chat mode generation)."""
+        assistant = {"role": "assistant", "content": "Let me help."}
+        full_msgs = self.FAKE_PREFIX + [assistant]
+        # Should not crash — assistant without reasoning_content is valid in chat mode
+        result = patched_tokenizer.apply_chat_template(full_msgs, enable_thinking=False)
+        assert "Let me help." in result
 
-    def test_empty_content_defaults_to_empty_string(self, patched_tokenizer):
-        """Tool result with missing content uses empty string."""
-        result = patched_tokenizer.apply_chat_template(
-            [self.FAKE_USER, {"role": "tool"}],
-            enable_thinking=True,
-        )
-        assert "<result></result>" in result
+    def test_extract_reasoning_and_tool_calls(self, patched_tokenizer, encoding_module):
+        """_to_dsv32_format correctly extracts reasoning_content and tool_calls."""
+        prefix_msgs = self.FAKE_PREFIX + [self.ASSISTANT_WITH_TOOL_CALL]
 
-    def test_mixed_roles_uses_full_path(self, patched_tokenizer, encoding_module):
-        """Messages with mixed roles go through encode_messages(), not incremental."""
+        # Should produce same result as manually constructed OpenAI-format messages
+        openai_assistant = {
+            "role": "assistant",
+            "reasoning_content": "I need to calculate this.",
+            "content": "Let me compute that.",
+            "tool_calls": [
+                {"type": "function", "function": {"name": "calculator", "arguments": '{"expression": "5 * 8"}'}}
+            ],
+        }
+        expected_msgs = self.FAKE_PREFIX + [openai_assistant]
+
+        result = patched_tokenizer.apply_chat_template(prefix_msgs, enable_thinking=True)
+        expected = encoding_module.encode_messages(expected_msgs, thinking_mode="thinking")
+        assert result == expected
+
+    def test_mixed_roles_full_path(self, patched_tokenizer, encoding_module):
+        """Non-assistant messages go through encode_messages unchanged."""
         messages = [
             {"role": "system", "content": "You are helpful."},
             {"role": "user", "content": "hi"},
@@ -282,24 +314,13 @@ class TestAttachDsv32Encoding:
         with pytest.raises((AttributeError, FileNotFoundError)):
             attach_dsv32_encoding(tok)
 
-    def test_kwargs_warning(self, patched_tokenizer, caplog):
-        """Unknown kwargs emit a warning."""
-        with caplog.at_level(logging.WARNING, logger="strands_sglang.utils"):
-            patched_tokenizer.apply_chat_template(
-                conversation=[{"role": "user", "content": "hi"}],
-                tokenize=False,
-            )
-
-        assert "tokenize" in caplog.text
-
-    def test_kwargs_no_warning_when_empty(self, patched_tokenizer, caplog):
-        """No warning when no extra kwargs passed."""
-        with caplog.at_level(logging.WARNING, logger="strands_sglang.utils"):
-            patched_tokenizer.apply_chat_template(
-                conversation=[{"role": "user", "content": ""}, {"role": "tool", "content": "ok"}],
-            )
-
-        assert "doesn't support" not in caplog.text
+    def test_kwargs_passed_through(self, patched_tokenizer):
+        """Extra kwargs don't crash (silently ignored)."""
+        result = patched_tokenizer.apply_chat_template(
+            conversation=[{"role": "user", "content": "hi"}],
+            tokenize=False,
+        )
+        assert result  # non-empty
 
 
 class TestGetTokenizerAutoDetect:

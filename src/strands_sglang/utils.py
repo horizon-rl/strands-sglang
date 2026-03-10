@@ -111,54 +111,58 @@ def attach_dsv32_encoding(tokenizer: PreTrainedTokenizerBase) -> None:
     Args:
         tokenizer: HuggingFace tokenizer to patch.
     """
-    try:
-        cache_dir = tokenizer.name_or_path
-        filepath = os.path.join(cache_dir, "encoding", "encoding_dsv32.py")
-        spec = importlib.util.spec_from_file_location("encoding_dsv32", filepath)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"Cannot load module spec from {filepath}")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        logger.info("Loaded DeepSeek V3.2's encoding module from %s", filepath)
-    except Exception as e:
-        logger.error("Failed to load DeepSeek V3.2's encoding module from %s: %s", filepath, e)
-        raise
+    filepath = os.path.join(tokenizer.name_or_path, "encoding", "encoding_dsv32.py")
+    spec = importlib.util.spec_from_file_location("encoding_dsv32", filepath)
+    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    logger.info("Loaded DeepSeek V3.2's encoding module from %s", filepath)
+
+    # Marker for DSML function calls in assistant content
+    _fc_start = f"\n\n<{module.dsml_token}function_calls"
 
     def apply_chat_template(
         conversation: list[dict[str, Any]],
         tools: list[dict] | None = None,
-        add_generation_prompt: bool = True,
         enable_thinking: bool = True,
         **kwargs: Any,
     ) -> str:
         """Format messages using DeepSeek-V3.2's `encode_messages()`.
 
         Drop-in replacement for Jinja-based `apply_chat_template()`.
+
+        Assistant messages are post-processed to extract ``reasoning_content`` and
+        ``tool_calls`` from inline content, since `format_messages` keeps them in
+        ``content`` but `encode_messages` expects separate fields.
         """
-        if kwargs:
-            logger.warning("DeepSeek V3.2 doesn't support the following kwargs: %s", kwargs)
-
         thinking_mode = "thinking" if enable_thinking else "chat"
+        messages = []
+        for msg in conversation:
+            if msg.get("role") != "assistant":
+                messages.append(msg)
+                continue
 
-        # Incremental path: fake user prefix + tool results.
-        # See: https://github.com/horizon-rl/strands-sglang/issues/29
-        if (
-            len(conversation) >= 2
-            and conversation[0].get("role") == "user"
-            and all(m.get("role") == "tool" for m in conversation[1:])
-        ):
-            result = "\n\n<function_results>"
-            for msg in conversation[1:]:
-                if msg.get("role") == "tool":
-                    result += "\n<result>" + msg.get("content", "") + "</result>"
-            result += "\n</function_results>"
-            if add_generation_prompt:
-                gen = "<think>" if thinking_mode == "thinking" else "</think>"
-                result += "\n\n" + gen
-            return str(module.encode_messages([conversation[0]], thinking_mode=thinking_mode)) + result
+            content = msg.get("content", "")
+            prepared = dict(msg)
+
+            # Extract <think>...</think> → reasoning_content
+            if content.startswith(module.thinking_start_token):
+                end = content.find(module.thinking_end_token)
+                if end != -1:
+                    prepared["reasoning_content"] = content[len(module.thinking_start_token) : end]
+                    content = content[end + len(module.thinking_end_token) :]
+
+            # Extract DSML function calls → tool_calls (OpenAI format)
+            fc_idx = content.find(_fc_start)
+            if fc_idx != -1:
+                tool_section = content[fc_idx + len(_fc_start) :]
+                content = content[:fc_idx]
+                _, _, parsed_calls = module.parse_tool_calls(0, tool_section)
+                prepared["tool_calls"] = module.tool_calls_to_openai_format(parsed_calls)
+
+            prepared["content"] = content
+            messages.append(prepared)
 
         # Attach tools to system message (encoding module reads them from msg.get("tools"))
-        messages = list(conversation)
         if tools:
             if messages and messages[0].get("role") == "system":
                 messages[0] = {**messages[0], "tools": tools}
