@@ -27,6 +27,7 @@ from strands_sglang.tool_parsers import ToolParseResult
 def mock_tokenizer():
     """Create a mock tokenizer for testing."""
     tokenizer = MagicMock()
+    tokenizer.name_or_path = "/nonexistent"
     tokenizer.encode.return_value = [1, 2, 3, 4, 5]
     tokenizer.decode.return_value = "decoded text"
     tokenizer.apply_chat_template.return_value = "formatted prompt"
@@ -37,7 +38,9 @@ def mock_tokenizer():
 def model(mock_tokenizer):
     """Create an SGLangModel with mock tokenizer."""
     client = SGLangClient(base_url="http://localhost:30000")
-    return SGLangModel(client=client, tokenizer=mock_tokenizer)
+    model = SGLangModel(client=client, tokenizer=mock_tokenizer)
+    model.__dict__["is_multimodal"] = False  # override cached_property (mock has no real config)
+    return model
 
 
 class TestFormatTools:
@@ -186,7 +189,7 @@ class TestTokenizePromptMessages:
         """Subsequent calls tokenize only new messages."""
         # Simulate first call already processed
         model.token_manager.add_prompt([1, 2, 3])
-        model._processed_message_count = 1
+        model.message_count = 1
 
         messages = [
             {"role": "user", "content": [{"text": "Hello"}]},
@@ -197,61 +200,21 @@ class TestTokenizePromptMessages:
         result = model.tokenize_prompt_messages(messages, system_prompt=None)
 
         assert result is not None
-        # Should only process messages after _processed_message_count
+        # Should only process messages after message_count
         mock_tokenizer.encode.assert_called()
 
-    def test_no_new_messages_returns_none(self, model, mock_tokenizer):
-        """No new messages returns None."""
+    def test_no_new_messages_raises(self, model, mock_tokenizer):
+        """No new messages raises RuntimeError."""
         model.token_manager.add_prompt([1, 2, 3])
-        model._processed_message_count = 2
+        model.message_count = 2
 
         messages = [
             {"role": "user", "content": [{"text": "Hello"}]},
             {"role": "assistant", "content": [{"text": "Hi"}]},
         ]
 
-        result = model.tokenize_prompt_messages(messages, system_prompt=None)
-
-        assert result is None
-
-
-class TestExtractLogprobs:
-    """Tests for _extract_logprobs method."""
-
-    def test_extract_from_meta_info(self, model):
-        """Extract logprobs from meta_info."""
-        event = {"meta_info": {"output_token_logprobs": [[-0.5, 100], [-0.3, 200], [-0.1, 300]]}}
-        result = model._extract_logprobs(event, "output_token_logprobs")
-
-        assert result == [-0.5, -0.3, -0.1]
-
-    def test_extract_from_top_level(self, model):
-        """Extract logprobs from top-level event."""
-        event = {"input_token_logprobs": [[-1.0, 1], [-2.0, 2]]}
-        result = model._extract_logprobs(event, "input_token_logprobs")
-
-        assert result == [-1.0, -2.0]
-
-    def test_extract_missing_key(self, model):
-        """Missing key returns None."""
-        event = {"other": "data"}
-        result = model._extract_logprobs(event, "output_token_logprobs")
-
-        assert result is None
-
-    def test_extract_empty_list(self, model):
-        """Empty logprobs list returns None."""
-        event = {"output_token_logprobs": []}
-        result = model._extract_logprobs(event, "output_token_logprobs")
-
-        assert result is None
-
-    def test_extract_none_value(self, model):
-        """None value returns None."""
-        event = {"output_token_logprobs": None}
-        result = model._extract_logprobs(event, "output_token_logprobs")
-
-        assert result is None
+        with pytest.raises(RuntimeError, match="No new messages to tokenize"):
+            model.tokenize_prompt_messages(messages, system_prompt=None)
 
 
 class TestYieldToolUseEvents:
@@ -315,11 +278,11 @@ class TestReset:
 
     def test_reset_clears_message_count(self, model):
         """Reset clears processed message count."""
-        model._processed_message_count = 5
+        model.message_count = 5
 
         model.reset()
 
-        assert model._processed_message_count == 0
+        assert model.message_count == 0
 
     def test_reset_clears_parse_errors(self, model):
         """Reset clears tool parse error counts."""
@@ -496,6 +459,7 @@ class TestValidateTokenizer:
         client = SGLangClient(base_url="http://localhost:30000")
         client.generate = AsyncMock(return_value={"text": "hello", "output_ids": [1, 2], "meta_info": {}})
         model = SGLangModel(client=client, tokenizer=mock_tokenizer)
+        model.__dict__["is_multimodal"] = False
 
         messages = [{"role": "user", "content": [{"text": "hi"}]}]
         async for _ in model.stream(messages):

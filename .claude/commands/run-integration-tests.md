@@ -11,17 +11,13 @@ Integration tests require a running SGLang server. Before running any commands, 
    - `qwen_xml` (XML format for Qwen models)
    - `glm` (GLM models)
 
-3. "Include VLM tests?" — offer these options:
-   - No (default — skip VLM tests, no torch needed)
-   - Yes (install torch + torchvision CPU for VLM processor tokenization)
-
 Then proceed:
 
 1. Create a temporary venv at `/tmp/strands-sglang-test-venv` using `uv venv /tmp/strands-sglang-test-venv --python 3.12 -q`
 2. Install the package with dev dependencies: `uv pip install -e ".[dev]" --python /tmp/strands-sglang-test-venv/bin/python -q`
-3. If VLM tests requested, install torch CPU: `uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu --python /tmp/strands-sglang-test-venv/bin/python -q`
-4. Run integration tests with the confirmed URL and tool parser:
-   - If VLM tests requested: `/tmp/strands-sglang-test-venv/bin/python -m pytest tests/integration/ -v --tb=short --sglang-base-url=<URL> --tool-parser=<PARSER> $ARGUMENTS`
-   - If VLM tests NOT requested: `/tmp/strands-sglang-test-venv/bin/python -m pytest tests/integration/ -v --tb=short --sglang-base-url=<URL> --tool-parser=<PARSER> --ignore=tests/integration/test_vlm_integration.py $ARGUMENTS`
+3. Run integration tests with the confirmed URL and tool parser:
+   `/tmp/strands-sglang-test-venv/bin/python -m pytest tests/integration/ -v --tb=short --sglang-base-url=<URL> --tool-parser=<PARSER> $ARGUMENTS`
+
+VLM tests are automatically skipped if the server is running a text-only model (auto-detected via `PretrainedConfig`). No extra dependencies (torch, torchvision) are needed.
 
 IMPORTANT: Never use the active shell's python/pytest — it may point to a different venv. Always use the temporary venv's python.

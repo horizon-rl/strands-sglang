@@ -19,9 +19,7 @@ Demonstrates two ways images enter the strands-sglang VLM pipeline:
 1. **Inline in user prompt** — a.jpg is embedded directly in the initial message
 2. **Via tool result** — the agent calls ``read_image("b.jpg")`` to load the second image
 
-After the agent finishes, we inspect TITO trajectory and show how to extract
-multimodal training tensors (pixel_values, image_grid_thw) from the HF processor
-for RL training pipelines.
+After the agent finishes, we inspect the TITO trajectory.
 
 Usage:
     python examples/vlm_agent/vlm_agent.py
@@ -29,13 +27,12 @@ Usage:
 """
 
 import asyncio
-import base64
 import json
 import os
 from pathlib import Path
 
 from strands import Agent, tool
-from transformers import AutoProcessor
+from transformers import AutoTokenizer
 
 from strands_sglang import SGLangModel, ToolLimiter
 from strands_sglang.client import SGLangClient
@@ -97,11 +94,11 @@ async def main():
 
     model_info = await client.get_model_info()
     model_path = os.environ.get("MODEL_PATH", model_info["model_path"])
-    processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     model = SGLangModel(
         client=client,
-        processor=processor,
+        tokenizer=tokenizer,
         tool_parser=HermesToolParser(),
         sampling_params={"max_new_tokens": 8192},
     )
@@ -167,46 +164,7 @@ async def main():
         print(f"    [{i}] {img_url[:50]}...")
 
     # -------------------------------------------------------------------------
-    # 5. Multimodal Training Tensors (not managed by strands-sglang)
-    #
-    # For RL training, you typically need pixel_values and image_grid_thw
-    # alongside the token trajectory. These come from calling the HF processor
-    # on the accumulated images. This is outside strands-sglang's scope but
-    # shown here for completeness.
-    # -------------------------------------------------------------------------
-    print("\n" + "=" * 60)
-    print("Multimodal Training Tensors (from HF processor)")
-    print("=" * 60)
-
-    from io import BytesIO  # noqa: E402
-
-    from PIL import Image  # noqa: E402
-
-    pil_images = []
-    for data_url in model.image_data:
-        b64_data = data_url.split(";base64,", 1)[1]
-        pil_images.append(Image.open(BytesIO(base64.b64decode(b64_data))))
-
-    if pil_images:
-        # Re-format the conversation to get the chat template text (with image placeholders).
-        # We can't use decoded token text because it contains expanded <|image_pad|> tokens
-        # that would be double-counted by the processor.
-        chat_msgs = SGLangModel.format_messages(agent.messages, is_multimodal=True)
-        chat_text = processor.tokenizer.apply_chat_template(chat_msgs, tokenize=False, add_generation_prompt=False)
-        mm_inputs = processor(text=chat_text, images=pil_images, return_tensors="pt")
-
-        for key, val in mm_inputs.items():
-            if key == "input_ids":
-                continue  # already tracked by TokenManager
-            if hasattr(val, "shape"):
-                print(f"  {key}: shape={val.shape}, dtype={val.dtype}")
-            else:
-                print(f"  {key}: {type(val).__name__}")
-    else:
-        print("  No images — skipping")
-
-    # -------------------------------------------------------------------------
-    # 6. Full Context (decoded)
+    # 5. Full Context (decoded)
     # -------------------------------------------------------------------------
     print("\n" + "=" * 60)
     print("Full Context (decoded token sequence)")

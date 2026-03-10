@@ -20,8 +20,8 @@ import base64
 import json
 import logging
 from collections.abc import AsyncGenerator, AsyncIterable, Callable, Iterator
+from functools import cached_property
 from typing import (
-    TYPE_CHECKING,
     Any,
     TypedDict,
     TypeVar,
@@ -37,15 +37,13 @@ from strands.types.exceptions import (
 )
 from strands.types.streaming import StopReason, StreamEvent
 from strands.types.tools import ToolChoice, ToolResultContent, ToolSpec
+from transformers import PretrainedConfig, PreTrainedTokenizerBase
 from typing_extensions import Unpack, override
 
 from .client import SGLangClient
 from .exceptions import SGLangContextLengthError, SGLangThrottledError
 from .token import TokenManager
 from .tool_parsers import HermesToolParser, ToolParser, ToolParseResult
-
-if TYPE_CHECKING:
-    from transformers import PreTrainedTokenizerBase, ProcessorMixin
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +76,7 @@ class SGLangModel(Model):
         self,
         *,
         client: SGLangClient,
-        tokenizer: PreTrainedTokenizerBase | None = None,
-        processor: ProcessorMixin | None = None,
+        tokenizer: PreTrainedTokenizerBase,
         tool_parser: ToolParser | None = None,
         **config: Unpack[SGLangConfig],
     ) -> None:
@@ -87,25 +84,19 @@ class SGLangModel(Model):
 
         Args:
             client: `SGLangClient` for HTTP communication with the SGLang server.
-            tokenizer: HuggingFace tokenizer for chat template and tokenization (optional if processor is provided).
-            processor: HuggingFace processor for multimodal processing.
+            tokenizer: HuggingFace tokenizer for chat template and tokenization.
             tool_parser: `ToolParser` for tool calls (default: `HermesToolParser`).
             **config: Additional SGLang generation configuration.
         """
         self.client = client
-        self.processor = processor
-        self.tokenizer = cast(
-            "PreTrainedTokenizerBase", (processor and getattr(processor, "tokenizer", None)) or tokenizer
-        )
-        if not self.tokenizer:
-            raise ValueError("Either tokenizer (text-only) or processor (multimodal) must be provided")
+        self.tokenizer = tokenizer
         self.tool_parser = tool_parser or HermesToolParser()
         self.config = dict(config)
         self.tool_parser.validate_tokenizer(self.tokenizer)
 
         # State tracking (this makes SGLangModel stateful)
         self.token_manager = TokenManager()
-        self._processed_message_count: int = 0
+        self.message_count: int = 0
         self.tool_parse_errors: dict[str, int] = {}  # per-tool parse error count
         self.image_data: list[str] = []  # accumulated image data URLs (VLM only)
 
@@ -118,14 +109,18 @@ class SGLangModel(Model):
         internal state for tool tracking.
         """
         self.token_manager.reset()
-        self._processed_message_count = 0
+        self.message_count = 0
         self.tool_parse_errors = {}
         self.image_data = []
 
-    @property
+    @cached_property
     def is_multimodal(self) -> bool:
-        """Whether the model is multimodal."""
-        return self.processor is not None
+        """Auto-detect multimodal support from the model's HuggingFace config.
+
+        Mirrors SGLang's logic: `hasattr(hf_config, "vision_config")`.
+        """
+        hf_config = PretrainedConfig.from_pretrained(self.tokenizer.name_or_path)
+        return hasattr(hf_config, "vision_config")
 
     # -------------------------------------------------------------------------
     # Model interface implementation
@@ -278,38 +273,32 @@ class SGLangModel(Model):
         messages: Messages,
         system_prompt: str | None,
         tools: list[dict] | None = None,
-    ) -> list[int] | None:
+    ) -> list[int]:
         """Tokenize prompt messages for the next generation call.
 
         First call: tokenizes full prompt with system prompt and tools.
         Subsequent calls: tokenizes only new messages (tool results, user messages),
         prepending the message separator to align with chat template formatting.
 
-        For VLM (when `self.processor` is set), uses the processor to insert
-        image placeholder tokens based on `self.image_data`.
+        Always uses `tokenizer.encode()` for tokenization. For VLM, the server
+        handles image token expansion based on `self.image_data`.
         """
-
-        def _tokenize(text: str) -> list[int]:
-            if self.processor:
-                return list(self.processor(text=text, images=self.image_data or None)["input_ids"][0])  # type: ignore[arg-type]
-            return list(self.tokenizer.encode(text, add_special_tokens=False))
-
         # First call: full prompt with tools
         if len(self.token_manager) == 0:
             formatted = self.format_prompt(messages, system_prompt, tools=tools)
-            return _tokenize(formatted)
+            return list(self.tokenizer.encode(formatted, add_special_tokens=False))
 
         # Subsequent calls: only new messages (prepend fake user to satisfy chat template assumptions).
         # See: https://github.com/horizon-rl/strands-sglang/issues/29
-        if len(messages) > self._processed_message_count:
-            new_messages = self._sort_tool_results(messages[self._processed_message_count :])
+        if len(messages) > self.message_count:
+            new_messages = self._sort_tool_results(messages[self.message_count :])
             fake: Messages = [{"role": "user", "content": [{"text": "ONLY FOR INCREMENTAL TOKENIZATION"}]}]
             full = self.format_prompt(fake + new_messages)
             prefix = self.format_prompt(fake, add_generation_prompt=False)
             formatted = self.tool_parser.message_separator + full[len(prefix) :]
-            return _tokenize(formatted)
+            return list(self.tokenizer.encode(formatted, add_special_tokens=False))
 
-        return None
+        raise RuntimeError(f"No new messages to tokenize (message_count={self.message_count}, got {len(messages)})")
 
     def _sort_tool_results(self, messages: Messages) -> Messages:
         """Sort tool results by ID to match original call order (IDs are sequential: call_0000, call_0001, ...)."""
@@ -366,14 +355,6 @@ class SGLangModel(Model):
             }
             yield {"contentBlockStop": {}}
 
-    def _extract_logprobs(self, event: dict[str, Any], key: str) -> list[float] | None:
-        """Extract logprobs from SGLang event (format: [[logprob, token_id, ...], ...])."""
-        meta_info = event.get("meta_info", {})
-        logprobs = meta_info.get(key) or event.get(key)
-        if isinstance(logprobs, list) and logprobs:
-            return [entry[0] for entry in logprobs]
-        return None
-
     @override
     async def stream(
         self,
@@ -396,9 +377,9 @@ class SGLangModel(Model):
         sampling_params: dict[str, Any] = dict(config.get("sampling_params") or {})
         sampling_params.setdefault("skip_special_tokens", False)
         return_logprob = config.get("return_logprob", True)
-        new_input_tokens = self.tokenize_prompt_messages(messages, system_prompt, tools=tools)
+        new_input_ids = self.tokenize_prompt_messages(messages, system_prompt, tools=tools)
         # Tracking token IDs in token_manager to ensure the token-in feature
-        input_ids = self.token_manager.token_ids + (new_input_tokens or [])
+        input_ids = self.token_manager.token_ids + new_input_ids
 
         # Start message
         yield {"messageStart": {"role": "assistant"}}
@@ -415,15 +396,14 @@ class SGLangModel(Model):
             )
 
             # Extract response data
-            text = response.get("text", "")
-            output_ids = response.get("output_ids", [])
-            output_logprobs = self._extract_logprobs(response, "output_token_logprobs")
-            input_logprobs = self._extract_logprobs(response, "input_token_logprobs")
-            meta_info = response.get("meta_info", {})
+            text = response["text"]
+            output_ids = response["output_ids"]
+            meta_info = response["meta_info"]
+            input_token_logprobs = meta_info.get("input_token_logprobs")
+            output_token_logprobs = meta_info.get("output_token_logprobs")
 
             # Yield text as single delta (non-streaming gives complete text at once)
-            if text:
-                yield {"contentBlockDelta": {"delta": {"text": text}}}
+            yield {"contentBlockDelta": {"delta": {"text": text}}}
 
         except SGLangContextLengthError as e:
             raise ContextWindowOverflowException(f"Context length exceeded: {e.body}") from e
@@ -431,12 +411,15 @@ class SGLangModel(Model):
             raise ModelThrottledException(f"Service throttled (status={e.status}): {e.body}") from e
 
         # Update token trajectory
-        if new_input_tokens:
-            new_input_logprobs = input_logprobs[-len(new_input_tokens) :] if input_logprobs else None
-            self.token_manager.add_prompt(token_ids=new_input_tokens, logprobs=new_input_logprobs)
-        if output_ids:
-            self.token_manager.add_response(token_ids=output_ids, logprobs=output_logprobs)
-        self._processed_message_count = len(messages) + 1
+        self.token_manager.add_prompt(
+            token_ids=new_input_ids,
+            logprobs=[e[0] for e in input_token_logprobs[-len(new_input_ids) :]] if input_token_logprobs else None,
+        )
+        self.token_manager.add_response(
+            token_ids=output_ids,
+            logprobs=[e[0] for e in output_token_logprobs] if output_token_logprobs else None,
+        )
+        self.message_count = len(messages) + 1
 
         # End text block, start tool use blocks if there are any tool calls
         yield {"contentBlockStop": {}}
@@ -523,7 +506,7 @@ class SGLangModel(Model):
             raise ModelThrottledException(f"Service throttled (status={e.status}): {e.body}") from e
 
         # Parse and validate response
-        text = response.get("text", "")
+        text = response["text"]
         parsed = output_model.model_validate_json(text)
 
         yield {"output": parsed}

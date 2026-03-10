@@ -27,7 +27,7 @@ from .client import DEFAULT_MAX_CONNECTIONS, SGLangClient
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from transformers import PreTrainedTokenizerBase, ProcessorMixin
+    from transformers import PreTrainedTokenizerBase
 
 
 @cache
@@ -170,18 +170,3 @@ def attach_dsv32_encoding(tokenizer: PreTrainedTokenizerBase) -> None:
     # attach the new apply_chat_template to the tokenizer
     tokenizer.apply_chat_template = apply_chat_template  # type: ignore[method-assign,assignment]
     tokenizer._dsv32_encoding_attached = True
-
-
-@cache
-def get_processor(processor_path: str) -> ProcessorMixin:
-    """Get a shared (cached) multimodal processor.
-
-    Args:
-        processor_path: Path or HuggingFace model ID.
-
-    Returns:
-        Cached processor instance.
-    """
-    from transformers import AutoProcessor
-
-    return AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)

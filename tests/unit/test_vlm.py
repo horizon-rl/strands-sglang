@@ -45,21 +45,10 @@ def _image_block() -> dict:
 
 
 @pytest.fixture
-def mock_processor():
-    """Mock HF processor with tokenizer sub-object."""
-    processor = MagicMock()
-    processor.tokenizer = MagicMock()
-    processor.tokenizer.encode.return_value = [1, 2, 3]
-    processor.tokenizer.apply_chat_template.return_value = "formatted prompt"
-    # processor(text=..., images=...) returns {"input_ids": [[...]]} (batch dim)
-    processor.return_value = {"input_ids": [[10, 20, 30]]}
-    return processor
-
-
-@pytest.fixture
 def mock_tokenizer():
-    """Mock tokenizer for text-only comparison."""
+    """Mock tokenizer."""
     tokenizer = MagicMock()
+    tokenizer.name_or_path = "/nonexistent"
     tokenizer.encode.return_value = [1, 2, 3]
     tokenizer.apply_chat_template.return_value = "formatted prompt"
     return tokenizer
@@ -71,15 +60,19 @@ def client():
 
 
 @pytest.fixture
-def vlm_model(client, mock_processor):
-    """SGLangModel with processor (VLM mode)."""
-    return SGLangModel(client=client, processor=mock_processor)
+def vlm_model(client, mock_tokenizer):
+    """SGLangModel in VLM mode."""
+    model = SGLangModel(client=client, tokenizer=mock_tokenizer)
+    model.__dict__["is_multimodal"] = True  # override cached_property
+    return model
 
 
 @pytest.fixture
 def text_model(client, mock_tokenizer):
-    """SGLangModel with tokenizer only (text-only mode)."""
-    return SGLangModel(client=client, tokenizer=mock_tokenizer)
+    """SGLangModel in text-only mode."""
+    model = SGLangModel(client=client, tokenizer=mock_tokenizer)
+    model.__dict__["is_multimodal"] = False  # override cached_property
+    return model
 
 
 # ---------------------------------------------------------------------------
@@ -88,30 +81,26 @@ def text_model(client, mock_tokenizer):
 
 
 class TestVLMConstructor:
-    def test_processor_stored(self, vlm_model, mock_processor):
-        assert vlm_model.processor is mock_processor
-
-    def test_tokenizer_from_processor(self, vlm_model, mock_processor):
-        assert vlm_model.tokenizer is mock_processor.tokenizer
-
     def test_is_multimodal_true(self, vlm_model):
         assert vlm_model.is_multimodal is True
 
     def test_is_multimodal_false(self, text_model):
         assert text_model.is_multimodal is False
 
-    def test_neither_tokenizer_nor_processor_raises(self, client):
-        with pytest.raises(ValueError, match="Either tokenizer"):
-            SGLangModel(client=client)
+    def test_auto_detect_with_vision_config(self, client, mock_tokenizer):
+        """Auto-detects multimodal from HuggingFace config's vision_config."""
+        mock_config = MagicMock()
+        mock_config.vision_config = {}  # has vision_config → multimodal
+        with patch("transformers.PretrainedConfig.from_pretrained", return_value=mock_config):
+            model = SGLangModel(client=client, tokenizer=mock_tokenizer)
+            assert model.is_multimodal is True
 
-    def test_tokenizer_only(self, client, mock_tokenizer):
-        model = SGLangModel(client=client, tokenizer=mock_tokenizer)
-        assert model.processor is None
-        assert model.tokenizer is mock_tokenizer
-
-    def test_both_tokenizer_and_processor_uses_processor_tokenizer(self, client, mock_processor, mock_tokenizer):
-        model = SGLangModel(client=client, tokenizer=mock_tokenizer, processor=mock_processor)
-        assert model.tokenizer is mock_processor.tokenizer
+    def test_auto_detect_without_vision_config(self, client, mock_tokenizer):
+        """Text-only models have no vision_config."""
+        mock_config = MagicMock(spec=[])  # no attributes → no vision_config
+        with patch("transformers.PretrainedConfig.from_pretrained", return_value=mock_config):
+            model = SGLangModel(client=client, tokenizer=mock_tokenizer)
+            assert model.is_multimodal is False
 
 
 # ---------------------------------------------------------------------------
@@ -262,29 +251,20 @@ class TestExtractImageUrls:
 
 
 class TestTokenizePromptMessagesVLM:
-    def test_first_call_uses_processor(self, vlm_model, mock_processor):
+    def test_vlm_uses_tokenizer_encode(self, vlm_model, mock_tokenizer):
+        """VLM uses tokenizer.encode() — server handles image expansion."""
         messages = [{"role": "user", "content": [{"text": "Hello"}]}]
         result = vlm_model.tokenize_prompt_messages(messages, system_prompt=None)
 
-        assert result == [10, 20, 30]
-        mock_processor.assert_called_once()
-        call_kwargs = mock_processor.call_args.kwargs
-        assert "text" in call_kwargs
+        assert result == [1, 2, 3]
+        mock_tokenizer.encode.assert_called_once()
 
-    def test_first_call_with_images_passes_image_data(self, vlm_model, mock_processor):
+    def test_vlm_with_images_uses_tokenizer_encode(self, vlm_model, mock_tokenizer):
+        """Even with images, tokenization uses tokenizer.encode()."""
         messages = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
         vlm_model.tokenize_prompt_messages(messages, system_prompt=None)
 
-        call_kwargs = mock_processor.call_args.kwargs
-        assert call_kwargs["images"] is not None
-        assert len(call_kwargs["images"]) == 1
-
-    def test_text_only_message_passes_images_none(self, vlm_model, mock_processor):
-        messages = [{"role": "user", "content": [{"text": "no images here"}]}]
-        vlm_model.tokenize_prompt_messages(messages, system_prompt=None)
-
-        call_kwargs = mock_processor.call_args.kwargs
-        assert call_kwargs["images"] is None
+        mock_tokenizer.encode.assert_called_once()
 
     def test_text_model_uses_tokenizer_encode(self, text_model, mock_tokenizer):
         messages = [{"role": "user", "content": [{"text": "Hello"}]}]
@@ -293,10 +273,10 @@ class TestTokenizePromptMessagesVLM:
         assert result == [1, 2, 3]
         mock_tokenizer.encode.assert_called_once()
 
-    def test_subsequent_call_uses_processor(self, vlm_model, mock_processor):
-        """Incremental tokenization also goes through processor when VLM."""
+    def test_subsequent_call_uses_tokenizer_encode(self, vlm_model, mock_tokenizer):
+        """Incremental tokenization also uses tokenizer.encode() for VLM."""
         vlm_model.token_manager.add_prompt([1, 2, 3])
-        vlm_model._processed_message_count = 1
+        vlm_model.message_count = 1
 
         messages = [
             {"role": "user", "content": [{"text": "Hello"}]},
@@ -305,8 +285,8 @@ class TestTokenizePromptMessagesVLM:
         ]
         result = vlm_model.tokenize_prompt_messages(messages, system_prompt=None)
 
-        assert result == [10, 20, 30]
-        mock_processor.assert_called_once()
+        assert result == [1, 2, 3]
+        mock_tokenizer.encode.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +295,7 @@ class TestTokenizePromptMessagesVLM:
 
 
 class TestImageAccumulation:
-    def test_images_accumulated_across_calls(self, vlm_model, mock_processor):
+    def test_images_accumulated_across_calls(self, vlm_model, mock_tokenizer):
         """image_data grows across multiple format_prompt calls."""
         # First turn: one image
         messages1 = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
@@ -324,7 +304,7 @@ class TestImageAccumulation:
 
         # Second turn: another image (simulate tool result with screenshot)
         vlm_model.token_manager.add_prompt([10, 20, 30])
-        vlm_model._processed_message_count = 1
+        vlm_model.message_count = 1
         messages2 = [
             {"role": "user", "content": [{"text": "describe"}, _image_block()]},
             {
@@ -343,7 +323,7 @@ class TestImageAccumulation:
         vlm_model.tokenize_prompt_messages(messages2, system_prompt=None)
         assert len(vlm_model.image_data) == 2  # 1 from first + 1 from second (tool result image)
 
-    def test_reset_clears_accumulated_images(self, vlm_model, mock_processor):
+    def test_reset_clears_accumulated_images(self, vlm_model, mock_tokenizer):
         messages = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
         vlm_model.tokenize_prompt_messages(messages, system_prompt=None)
         assert len(vlm_model.image_data) > 0
@@ -359,7 +339,7 @@ class TestImageAccumulation:
 
 class TestStreamImageData:
     @pytest.mark.asyncio
-    async def test_image_data_passed_to_client(self, vlm_model, mock_processor):
+    async def test_image_data_passed_to_client(self, vlm_model, mock_tokenizer):
         """When image_data is non-empty, it's forwarded to client.generate."""
         vlm_model.image_data = [_RED_PIXEL_DATA_URL]
 
