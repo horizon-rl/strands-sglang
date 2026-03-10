@@ -196,14 +196,18 @@ class TestTITO:
         assert len(segment_info) >= 4, f"Expected >=4 segments for multi-turn tool use, got {len(segment_info)}"
         assert sum(1 for is_resp, _ in segment_info if is_resp) >= 2, "Should have at least 2 response segments"
 
-        # Verify no None logprobs in any response segment
+        # Verify no None logprobs in any response segment or subsequent prompt segment.
+        # Segment 0 (initial prompt) may have a None for the BOS token, which is expected.
+        # Segments 1+ must have no None logprobs — a None at the start of a prompt segment
+        # means logprob_start_len is too high, causing the boundary token to lose its logprob.
         for i, (is_response, _) in enumerate(segment_info):
-            if not is_response:
+            if i == 0:
                 continue
             segment_logprobs = [t.logprob for t in model.token_manager.segments[i]]
             none_count = sum(1 for lp in segment_logprobs if lp is None)
+            seg_type = "Response" if is_response else "Prompt"
             assert none_count == 0, (
-                f"Response segment {i} has {none_count} None logprobs out of {len(segment_logprobs)} tokens. "
+                f"{seg_type} segment {i} has {none_count} None logprobs out of {len(segment_logprobs)} tokens. "
                 f"logprob_start_len may be incorrect."
             )
 

@@ -304,6 +304,7 @@ class SGLangModel(Model):
             fake_hf_messages = self.format_messages(cast(Messages, fake_messages), is_multimodal=self.is_multimodal)
             full_prompt = self.apply_chat_template(fake_hf_messages + new_hf_messages, add_generation_prompt=True)
             prefix_prompt = self.apply_chat_template(fake_hf_messages, add_generation_prompt=False)
+            assert full_prompt.startswith(prefix_prompt), "full prompt must start with prefix prompt"
             prompt = self.tool_parser.message_separator + full_prompt[len(prefix_prompt) :]
             return list(self.tokenizer.encode(prompt, add_special_tokens=False))
 
@@ -383,7 +384,7 @@ class SGLangModel(Model):
                 input_ids=input_ids,
                 sampling_params=sampling_params,
                 return_logprob=return_logprob,
-                logprob_start_len=len(self.token_manager.token_ids) if return_logprob else None,
+                logprob_start_len=max(0, len(self.token_manager.token_ids) - 1) if return_logprob else None,
                 image_data=self.image_data or None,
             )
 
