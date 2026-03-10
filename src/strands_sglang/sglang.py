@@ -372,11 +372,11 @@ class SGLangModel(Model):
         This means users won't see streaming behavior such as print callbacks.
         """
         # Prepare request
-        tools = self.format_tool_specs(tool_specs) if tool_specs else None
         config = self.get_config()
         sampling_params: dict[str, Any] = dict(config.get("sampling_params") or {})
         sampling_params.setdefault("skip_special_tokens", False)
         return_logprob = config.get("return_logprob", True)
+        tools = self.format_tool_specs(tool_specs) if tool_specs else None
         new_input_ids = self.tokenize_prompt_messages(messages, system_prompt, tools=tools)
         # Tracking token IDs in token_manager to ensure the token-in feature
         input_ids = self.token_manager.token_ids + new_input_ids
