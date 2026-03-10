@@ -105,13 +105,14 @@ class TestStreamWithTools:
             {
                 "role": "assistant",
                 "content": [
+                    {"text": '<tool_call>\n{"name": "calculator", "arguments": {"expression": "5 * 8"}}\n</tool_call>'},
                     {
                         "toolUse": {
                             "toolUseId": "call_123",
                             "name": "calculator",
                             "input": {"expression": "5 * 8"},
                         }
-                    }
+                    },
                 ],
             }
         )
@@ -177,7 +178,8 @@ class TestTITO:
             {
                 "role": "assistant",
                 "content": [
-                    {"toolUse": {"toolUseId": "call_1", "name": "calculator", "input": {"expression": "5 * 8"}}}
+                    {"text": '<tool_call>\n{"name": "calculator", "arguments": {"expression": "5 * 8"}}\n</tool_call>'},
+                    {"toolUse": {"toolUseId": "call_1", "name": "calculator", "input": {"expression": "5 * 8"}}},
                 ],
             }
         )

@@ -296,17 +296,24 @@ class TestTokenizePromptMessagesVLM:
 
 class TestImageAccumulation:
     def test_images_accumulated_across_calls(self, vlm_model, mock_tokenizer):
-        """image_data grows across multiple format_prompt calls."""
+        """image_data grows across multiple tokenize_prompt_messages calls."""
         # First turn: one image
         messages1 = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
         vlm_model.tokenize_prompt_messages(messages1, system_prompt=None)
         assert len(vlm_model.image_data) == 1
 
-        # Second turn: another image (simulate tool result with screenshot)
+        # Second turn: simulate assistant response + tool result with screenshot
         vlm_model.token_manager.add_prompt([10, 20, 30])
-        vlm_model.message_count = 1
+        vlm_model.message_count = 2  # len([user_msg]) + 1 after first generation
         messages2 = [
             {"role": "user", "content": [{"text": "describe"}, _image_block()]},
+            {
+                "role": "assistant",
+                "content": [
+                    {"text": "I'll use the tool."},
+                    {"toolUse": {"toolUseId": "call_001", "name": "screenshot", "input": {}}},
+                ],
+            },
             {
                 "role": "user",
                 "content": [
@@ -340,12 +347,10 @@ class TestImageAccumulation:
 class TestStreamImageData:
     @pytest.mark.asyncio
     async def test_image_data_passed_to_client(self, vlm_model, mock_tokenizer):
-        """When image_data is non-empty, it's forwarded to client.generate."""
-        vlm_model.image_data = [_RED_PIXEL_DATA_URL]
-
+        """When message contains an image, image_data is forwarded to client.generate."""
         with patch.object(vlm_model.client, "generate", new_callable=_async_mock_generate) as mock_gen:
             async for _ in vlm_model.stream(
-                messages=[{"role": "user", "content": [{"text": "describe"}]}],
+                messages=[{"role": "user", "content": [{"text": "describe"}, _image_block()]}],
             ):
                 pass
             assert mock_gen.call_args.kwargs["image_data"] == [_RED_PIXEL_DATA_URL]

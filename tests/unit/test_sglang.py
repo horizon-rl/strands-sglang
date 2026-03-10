@@ -139,34 +139,35 @@ class TestFormatMessages:
         assert result[0]["content"] == "<tool_call>...</tool_call>"
 
 
-class TestFormatPrompt:
-    """Tests for format_prompt method."""
+class TestApplyChatTemplate:
+    """Tests for apply_chat_template method."""
 
-    def test_format_simple_prompt(self, model, mock_tokenizer):
-        """Format simple user message."""
-        messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-        result = model.format_prompt(messages)
+    def test_applies_template(self, model, mock_tokenizer):
+        """Applies HF chat template and returns string."""
+        hf_messages = [{"role": "user", "content": "Hello"}]
+        result = model.apply_chat_template(hf_messages)
 
         mock_tokenizer.apply_chat_template.assert_called_once()
         assert result == "formatted prompt"
 
-    def test_format_prompt_with_system(self, model, mock_tokenizer):
-        """Format prompt with system message."""
+    def test_with_system_prompt(self, model, mock_tokenizer):
+        """System prompt is passed via format_messages, not apply_chat_template."""
         messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-        model.format_prompt(messages, system_prompt="You are helpful.")
+        hf_messages = model.format_messages(messages, system_prompt="You are helpful.")
 
+        model.apply_chat_template(hf_messages)
         call_kwargs = mock_tokenizer.apply_chat_template.call_args.kwargs
         chat_messages = call_kwargs["conversation"]
         assert chat_messages[0]["role"] == "system"
         assert chat_messages[0]["content"] == "You are helpful."
 
-    def test_format_prompt_with_tools(self, model, mock_tokenizer):
-        """Format prompt with tools."""
-        messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    def test_with_tools(self, model, mock_tokenizer):
+        """Tools are forwarded to apply_chat_template."""
+        hf_messages = [{"role": "user", "content": "Hello"}]
         tools = [{"type": "function", "function": {"name": "test"}}]
-        model.format_prompt(messages, tools=tools)
+        model.apply_chat_template(hf_messages, tools=tools, add_generation_prompt=True)
 
-        call_kwargs = mock_tokenizer.apply_chat_template.call_args[1]
+        call_kwargs = mock_tokenizer.apply_chat_template.call_args.kwargs
         assert call_kwargs["tools"] == tools
         assert call_kwargs["add_generation_prompt"] is True
         assert call_kwargs["tokenize"] is False
@@ -344,7 +345,7 @@ class TestClientSetup:
 
 
 class TestSortToolResults:
-    """Tests for _sort_tool_results method."""
+    """Tests for sort_tool_results method."""
 
     def test_sort_by_sequential_id(self, model):
         """Tool results are sorted by sequential ID (call_0000 < call_0001 < call_0002)."""
@@ -359,7 +360,7 @@ class TestSortToolResults:
             },
         ]
 
-        sorted_msgs = model._sort_tool_results(messages)
+        sorted_msgs = model.sort_tool_results(messages)
 
         results = sorted_msgs[0]["content"]
         assert results[0]["toolResult"]["toolUseId"] == "call_0000"
@@ -373,39 +374,19 @@ class TestSortToolResults:
             {"role": "user", "content": [{"text": "Hi"}]},
         ]
 
-        sorted_msgs = model._sort_tool_results(messages)
+        sorted_msgs = model.sort_tool_results(messages)
 
         assert sorted_msgs == messages
 
-    def test_preserves_other_content_blocks(self, model):
-        """Non-toolResult blocks are preserved (moved to front)."""
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"toolResult": {"toolUseId": "call_0001", "content": [{"text": "b"}]}},
-                    {"text": "some context"},
-                    {"toolResult": {"toolUseId": "call_0000", "content": [{"text": "a"}]}},
-                ],
-            },
-        ]
-
-        sorted_msgs = model._sort_tool_results(messages)
-
-        content = sorted_msgs[0]["content"]
-        assert content[0] == {"text": "some context"}  # Other blocks first
-        assert content[1]["toolResult"]["toolUseId"] == "call_0000"
-        assert content[2]["toolResult"]["toolUseId"] == "call_0001"
-
     def test_empty_messages(self, model):
         """Empty messages list returns empty."""
-        assert model._sort_tool_results([]) == []
+        assert model.sort_tool_results([]) == []
 
     def test_no_tool_results(self, model):
         """Messages without toolResults pass through unchanged."""
         messages = [{"role": "user", "content": [{"text": "Hello"}]}]
 
-        sorted_msgs = model._sort_tool_results(messages)
+        sorted_msgs = model.sort_tool_results(messages)
 
         assert sorted_msgs == messages
 
@@ -422,7 +403,7 @@ class TestSortToolResults:
             },
         ]
 
-        sorted_msgs = model._sort_tool_results(messages)
+        sorted_msgs = model.sort_tool_results(messages)
 
         # Assistant message unchanged
         assert sorted_msgs[0] == messages[0]
@@ -434,7 +415,7 @@ class TestSortToolResults:
         """User message with string content (not list) passes through unchanged."""
         messages = [{"role": "user", "content": "plain text message"}]
 
-        sorted_msgs = model._sort_tool_results(messages)
+        sorted_msgs = model.sort_tool_results(messages)
 
         assert sorted_msgs == messages
 

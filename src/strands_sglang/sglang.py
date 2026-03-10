@@ -225,28 +225,22 @@ class SGLangModel(Model):
             for spec in tool_specs
         ]
 
-    def format_prompt(
+    def apply_chat_template(
         self,
-        messages: Messages,
-        system_prompt: str | None = None,
+        hf_messages: list[dict[str, Any]],
         tools: list[dict] | None = None,
-        add_generation_prompt: bool = True,
+        add_generation_prompt: bool = False,
+        **kwargs: Any,
     ) -> str:
-        """Format messages into a prompt string using the HuggingFace chat template.
-
-        The result is manually tokenized (not model-generated) and added to
-        the token trajectory with `loss_mask=False`.
-        """
-        chat_messages = self.format_messages(messages, system_prompt, is_multimodal=self.is_multimodal)
-        self.image_data.extend(self.extract_image_urls(chat_messages))
-        # TODO: add support for other modalities later
+        """Apply the HuggingFace chat template to the messages."""
         return str(
             self.tokenizer.apply_chat_template(
-                conversation=chat_messages,
+                conversation=hf_messages,
                 tools=cast(list[dict | Callable], tools),
                 add_generation_prompt=add_generation_prompt,
-                tokenize=False,
+                tokenize=False,  # never tokenize here
                 enable_thinking=self.config.get("enable_thinking"),
+                **kwargs,
             )
         )
 
@@ -268,6 +262,16 @@ class SGLangModel(Model):
     # Generation
     # -------------------------------------------------------------------------
 
+    @staticmethod
+    def sort_tool_results(messages: Messages) -> Messages:
+        """Sort tool results by ID to match original call order (IDs are sequential: call_0000, call_0001, ...)."""
+        return [
+            {**msg, "content": sorted(msg["content"], key=lambda c: c["toolResult"]["toolUseId"])}
+            if "toolResult" in msg["content"][0]
+            else msg
+            for msg in messages
+        ]
+
     def tokenize_prompt_messages(
         self,
         messages: Messages,
@@ -276,46 +280,36 @@ class SGLangModel(Model):
     ) -> list[int]:
         """Tokenize prompt messages for the next generation call.
 
-        First call: tokenizes full prompt with system prompt and tools.
-        Subsequent calls: tokenizes only new messages (tool results, user messages),
-        prepending the message separator to align with chat template formatting.
-
-        Always uses `tokenizer.encode()` for tokenization. For VLM, the server
-        handles image token expansion based on `self.image_data`.
+        - First call: tokenizes full prompt with system prompt and tools.
+        - Subsequent calls: uses a fake prefix (system + user + previous assistant) to give
+        the chat template enough context (BOS, `last_query_index`, boundary formatting),
+        then subtracts it to extract only incremental tokens.
         """
         # First call: full prompt with tools
-        if len(self.token_manager) == 0:
-            formatted = self.format_prompt(messages, system_prompt, tools=tools)
-            return list(self.tokenizer.encode(formatted, add_special_tokens=False))
+        if self.message_count == 0:
+            hf_messages = self.format_messages(messages, system_prompt, is_multimodal=self.is_multimodal)
+            self.image_data = self.extract_image_urls(hf_messages)
+            prompt = self.apply_chat_template(hf_messages, tools=tools, add_generation_prompt=True)
+            return list(self.tokenizer.encode(prompt, add_special_tokens=False))
 
-        # Subsequent calls: only new messages (prepend fake user to satisfy chat template assumptions).
-        # See: https://github.com/horizon-rl/strands-sglang/issues/29
+        # Incremental: fake prefix subtraction with message_separator bridge
         if len(messages) > self.message_count:
-            new_messages = self._sort_tool_results(messages[self.message_count :])
-            fake: Messages = [{"role": "user", "content": [{"text": "ONLY FOR INCREMENTAL TOKENIZATION"}]}]
-            full = self.format_prompt(fake + new_messages)
-            prefix = self.format_prompt(fake, add_generation_prompt=False)
-            formatted = self.tool_parser.message_separator + full[len(prefix) :]
-            return list(self.tokenizer.encode(formatted, add_special_tokens=False))
+            new_hf_messages = self.format_messages(
+                self.sort_tool_results(messages[self.message_count :]), is_multimodal=self.is_multimodal
+            )
+            self.image_data.extend(self.extract_image_urls(new_hf_messages))
+            fake_messages = [
+                {"role": "system", "content": [{"text": "FAKE SYSTEM PROMPT"}]},
+                {"role": "user", "content": [{"text": "FAKE USER MESSAGE"}]},
+                messages[self.message_count - 1],
+            ]
+            fake_hf_messages = self.format_messages(cast(Messages, fake_messages), is_multimodal=self.is_multimodal)
+            full_prompt = self.apply_chat_template(fake_hf_messages + new_hf_messages, add_generation_prompt=True)
+            prefix_prompt = self.apply_chat_template(fake_hf_messages, add_generation_prompt=False)
+            prompt = self.tool_parser.message_separator + full_prompt[len(prefix_prompt) :]
+            return list(self.tokenizer.encode(prompt, add_special_tokens=False))
 
         raise RuntimeError(f"No new messages to tokenize (message_count={self.message_count}, got {len(messages)})")
-
-    def _sort_tool_results(self, messages: Messages) -> Messages:
-        """Sort tool results by ID to match original call order (IDs are sequential: call_0000, call_0001, ...)."""
-        result = []
-        for msg in messages:
-            if msg.get("role") != "user" or not isinstance(msg.get("content"), list):
-                result.append(msg)
-                continue
-            content = msg["content"]
-            tool_results = [b for b in content if isinstance(b, dict) and "toolResult" in b]
-            if not tool_results:
-                result.append(msg)
-                continue
-            other = [b for b in content if not (isinstance(b, dict) and "toolResult" in b)]
-            tool_results.sort(key=lambda b: b.get("toolResult", {}).get("toolUseId", ""))
-            result.append({**msg, "content": other + tool_results})
-        return result
 
     def _yield_tool_use_events(
         self,
@@ -480,8 +474,9 @@ class SGLangModel(Model):
         json_schema = json.dumps(output_model.model_json_schema())
 
         # Format and tokenize prompt (no tools for structured output)
-        formatted = self.format_prompt(prompt, system_prompt, tools=None)
-        input_ids = self.tokenizer.encode(formatted, add_special_tokens=False)
+        hf_messages = self.format_messages(prompt, system_prompt, is_multimodal=self.is_multimodal)
+        formatted_prompt = self.apply_chat_template(hf_messages, add_generation_prompt=True)
+        input_ids = self.tokenizer.encode(formatted_prompt, add_special_tokens=False)
 
         # Build sampling params with json_schema constraint
         config = self.get_config()
