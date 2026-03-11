@@ -52,7 +52,6 @@ class QwenXMLToolParser(ToolParser):
     Chat Template Notes:
         Qwen Coder's chat template uses newline as separator between messages:
         `<|im_start|>role\\ncontent<|im_end|>\\n<|im_start|>...`
-        The message_separator property returns "\\n" to match this format.
     """
 
     # Pattern to extract function name from <function=name>...</function>
@@ -60,12 +59,6 @@ class QwenXMLToolParser(ToolParser):
 
     # Pattern to extract parameters from <parameter=name>value</parameter>
     _PARAMETER_PATTERN = re.compile(r"<parameter=([^>]+)>(.*?)</parameter>", re.DOTALL)
-
-    @override
-    @property
-    def message_separator(self) -> str:
-        """Qwen Coder models use newline as separator between messages."""
-        return "\n"
 
     @override
     def parse(self, text: str) -> list[ToolParseResult]:

@@ -40,6 +40,7 @@ def model(mock_tokenizer):
     client = SGLangClient(base_url="http://localhost:30000")
     model = SGLangModel(client=client, tokenizer=mock_tokenizer)
     model.__dict__["is_multimodal"] = False  # override cached_property (mock has no real config)
+    model.__dict__["message_separator"] = ""  # override cached_property (mock has no real template)
     return model
 
 

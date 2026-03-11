@@ -136,18 +136,6 @@ class ToolParser(ABC):
         """
         _ = tokenizer  # Used by subclass overrides
 
-    @property
-    def message_separator(self) -> str:
-        """Separator between messages in the chat template.
-
-        Different tokenizers use different separators between messages.
-        This is used during incremental tokenization to ensure the TITO
-        trajectory matches what `apply_chat_template` would produce.
-
-        Default is no separator.
-        """
-        return ""
-
     @abstractmethod
     def parse(self, text: str) -> list[ToolParseResult]:
         """Parse tool calls from model output text.

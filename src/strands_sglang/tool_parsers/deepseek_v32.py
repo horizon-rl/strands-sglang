@@ -77,12 +77,6 @@ class DeepSeekV32ToolParser(ToolParser):
                 "to be called before use. See `strands_sglang.utils.attach_dsv32_encoding`."
             )
 
-    @property
-    @override
-    def message_separator(self) -> str:
-        """DeepSeek-V3.2 uses its EOS token as message separator."""
-        return "<｜end▁of▁sentence｜>"
-
     @override
     def parse(self, text: str) -> list[ToolParseResult]:
         """Parse tool calls from DeepSeek-V3.2 model output.

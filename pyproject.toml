@@ -67,7 +67,10 @@ python_files = ["test_*.py"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 timeout = 90
-markers = ["integration: tests that require a running SGLang server"]
+markers = [
+    "integration: tests that require a running SGLang server",
+    "chat_template: tests against real HuggingFace tokenizers (requires network on first run)",
+]
 
 [tool.ruff]
 line-length = 120

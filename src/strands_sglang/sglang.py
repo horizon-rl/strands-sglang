@@ -258,20 +258,6 @@ class SGLangModel(Model):
                         urls.append(part["image"])
         return urls
 
-    # -------------------------------------------------------------------------
-    # Generation
-    # -------------------------------------------------------------------------
-
-    @staticmethod
-    def sort_tool_results(messages: Messages) -> Messages:
-        """Sort tool results by ID to match original call order (IDs are sequential: call_0000, call_0001, ...)."""
-        return [
-            {**msg, "content": sorted(msg["content"], key=lambda c: c["toolResult"]["toolUseId"])}
-            if "toolResult" in msg["content"][0]
-            else msg
-            for msg in messages
-        ]
-
     def tokenize_prompt_messages(
         self,
         messages: Messages,
@@ -305,10 +291,41 @@ class SGLangModel(Model):
             full_prompt = self.apply_chat_template(fake_hf_messages + new_hf_messages, add_generation_prompt=True)
             prefix_prompt = self.apply_chat_template(fake_hf_messages, add_generation_prompt=False)
             assert full_prompt.startswith(prefix_prompt), "full prompt must start with prefix prompt"
-            prompt = self.tool_parser.message_separator + full_prompt[len(prefix_prompt) :]
+            prompt = self.message_separator + full_prompt[len(prefix_prompt) :]
             return list(self.tokenizer.encode(prompt, add_special_tokens=False))
 
         raise RuntimeError(f"No new messages to tokenize (message_count={self.message_count}, got {len(messages)})")
+
+    @staticmethod
+    def sort_tool_results(messages: Messages) -> Messages:
+        """Sort tool results by ID to match original call order (IDs are sequential: call_0000, call_0001, ...)."""
+        return [
+            {**msg, "content": sorted(msg["content"], key=lambda c: c["toolResult"]["toolUseId"])}
+            if "toolResult" in msg["content"][0]
+            else msg
+            for msg in messages
+        ]
+
+    @cached_property
+    def message_separator(self) -> str:
+        """Auto-detect text bridging the previous response's stop token and the next message.
+
+        Probes the chat template with a terminal assistant message. The text after the
+        marker is `stop_token + separator`. Strip `stop_token` to get the separator if it exists.
+        """
+        probe = str(
+            self.tokenizer.apply_chat_template(
+                [{"role": "user", "content": "U"}, {"role": "assistant", "content": "__M__"}],
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+        )
+        sep = self.tokenizer.encode(probe.split("__M__", 1)[1], add_special_tokens=False)[1:]
+        return self.tokenizer.decode(sep) if sep else ""
+
+    # -------------------------------------------------------------------------
+    # Generation
+    # -------------------------------------------------------------------------
 
     def _yield_tool_use_events(
         self,

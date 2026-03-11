@@ -64,6 +64,7 @@ def vlm_model(client, mock_tokenizer):
     """SGLangModel in VLM mode."""
     model = SGLangModel(client=client, tokenizer=mock_tokenizer)
     model.__dict__["is_multimodal"] = True  # override cached_property
+    model.__dict__["message_separator"] = ""  # override cached_property (mock has no real template)
     return model
 
 
@@ -72,6 +73,7 @@ def text_model(client, mock_tokenizer):
     """SGLangModel in text-only mode."""
     model = SGLangModel(client=client, tokenizer=mock_tokenizer)
     model.__dict__["is_multimodal"] = False  # override cached_property
+    model.__dict__["message_separator"] = ""  # override cached_property (mock has no real template)
     return model
 
 

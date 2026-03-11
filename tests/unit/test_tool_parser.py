@@ -242,9 +242,6 @@ def hello():
         assert len(results) == 1
         assert results[0].name == "actual"
 
-    def test_message_separator(self, parser):
-        assert parser.message_separator == "\n"
-
     def test_real_world_git_status_example(self, parser):
         """Parse real-world example from Qwen3-Coder."""
         text = """I'll check the git status for you.
@@ -371,9 +368,6 @@ class TestGLMToolParser:
         assert len(results) == 1
         assert results[0].name == "actual"
         assert results[0].input == {"y": 2}
-
-    def test_message_separator(self, parser):
-        assert parser.message_separator == ""
 
     def test_real_world_example(self, parser):
         """Parse real-world example from GLM-4."""
@@ -519,9 +513,6 @@ class TestKimiK2ToolParser:
         assert len(results) == 1
         assert results[0].name == "real"
 
-    def test_message_separator_is_empty(self, parser):
-        assert parser.message_separator == ""
-
 
 class TestDeepSeekV32ToolParser:
     """Tests for DeepSeekV32ToolParser (DeepSeek-V3.2 DSML format)."""
@@ -625,9 +616,6 @@ class TestDeepSeekV32ToolParser:
         assert len(results) == 1
         assert results[0].name == "actual"
         assert results[0].input == {"y": 2}
-
-    def test_message_separator_is_eos(self, parser):
-        assert parser.message_separator == "<｜end▁of▁sentence｜>"
 
     def test_unclosed_function_calls_tag(self, parser):
         text = (

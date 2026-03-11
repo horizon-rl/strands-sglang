@@ -48,16 +48,9 @@ class HermesToolParser(ToolParser):
     Chat Template Notes:
         Qwen3's chat template uses newline as separator between messages:
         `<|im_start|>role\\ncontent<|im_end|>\\n<|im_start|>...`
-        The message_separator property returns "\\n" to match this format.
     """
 
     _NAME_PATTERN = re.compile(r'"name"\s*:\s*"([^"]+)"')
-
-    @override
-    @property
-    def message_separator(self) -> str:
-        """Qwen models use newline as separator between messages."""
-        return "\n"
 
     @override
     def parse(self, text: str) -> list[ToolParseResult]:
