@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tool call parser for Kimi K2 / K2.5 models."""
+"""Kimi K2 special-token tool call parser."""
 
 from __future__ import annotations
 
@@ -29,23 +29,17 @@ logger = logging.getLogger(__name__)
 
 @register_tool_parser("kimi_k2")
 class KimiK2ToolParser(ToolParser):
-    """Parser for Kimi K2/K2.5 special-token-based tool call format.
+    """Parser for Kimi K2/K2.5 special-token tool call format.
 
     Format:
+
         <|tool_calls_section_begin|>
-        <|tool_call_begin|>functions.func_name:0<|tool_call_argument_begin|>{"arg": "val"}<|tool_call_end|>
+        <|tool_call_begin|>functions.func_name:0
+        <|tool_call_argument_begin|>{"arg": "val"}<|tool_call_end|>
         <|tool_calls_section_end|>
 
-    The function name is extracted from the `functions.<name>:<index>`
-    identifier. Arguments are JSON-encoded dictionaries.
-
-    Think Block Handling:
-        Models with reasoning capabilities may output draft tool calls
-        inside <think>...</think> blocks. These are excluded by default
-        to avoid executing planning/reasoning tool calls.
-
-    Chat Template Notes:
-        Kimi K2 uses no explicit separator between messages.
+    Function name is extracted from `functions.<name>:<index>`.
+    Think blocks are excluded to avoid parsing draft tool calls from reasoning.
     """
 
     SECTION_PATTERN = re.compile(
@@ -62,17 +56,7 @@ class KimiK2ToolParser(ToolParser):
 
     @override
     def parse(self, text: str) -> list[ToolParseResult]:
-        """Parse tool calls from Kimi K2 model output.
-
-        Finds `<|tool_calls_section_begin|>` sections, then extracts
-        individual calls with their function names and JSON arguments.
-
-        Args:
-            text: Model output text.
-
-        Returns:
-            List of tool call results (successful and errors).
-        """
+        """Parse tool calls from model output."""
         # Remove think blocks to avoid parsing draft tool calls from reasoning
         text = self.think_pattern.sub("", text)
 

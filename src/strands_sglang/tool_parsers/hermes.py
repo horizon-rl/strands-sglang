@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Hermes/Qwen tool call parser."""
+"""Hermes/Qwen JSON tool call parser."""
 
 from __future__ import annotations
 
@@ -29,39 +29,21 @@ logger = logging.getLogger(__name__)
 
 @register_tool_parser("hermes")
 class HermesToolParser(ToolParser):
-    r"""Parser for Hermes/Qwen tool call format (JSON wrapped in delimiters).
+    r"""Parser for Hermes/Qwen JSON tool call format.
 
-    Format: <tool_call>{"name": "func", "arguments": {"arg": value}}</tool_call>
+    Format:
 
-    Used by:
-    - Qwen/Qwen2/Qwen3 models
-    - NousResearch/Hermes models
-    - Models using similar wrapped JSON tool call format
+        <tool_call>{"name": "func", "arguments": {"arg": "value"}}</tool_call>
 
-    Only handles JSONDecodeError; Strands validates arguments against tool schemas.
-
-    Think Block Handling:
-        Models with reasoning capabilities (Qwen3 with thinking, DeepSeek-R1, etc.)
-        may output draft tool calls inside <think>...</think> blocks. These are
-        excluded by default to avoid executing planning/reasoning tool calls.
-
-    Chat Template Notes:
-        Qwen3's chat template uses newline as separator between messages:
-        `<|im_start|>role\\ncontent<|im_end|>\\n<|im_start|>...`
+    Used by Qwen2/Qwen3 and NousResearch/Hermes models. Think blocks are
+    excluded to avoid parsing draft tool calls from reasoning.
     """
 
     _NAME_PATTERN = re.compile(r'"name"\s*:\s*"([^"]+)"')
 
     @override
     def parse(self, text: str) -> list[ToolParseResult]:
-        """Parse tool calls from model output.
-
-        Args:
-            text: Model output text.
-
-        Returns:
-            List of tool call results (successful and errors).
-        """
+        """Parse tool calls from model output."""
         # Remove think blocks to avoid parsing draft tool calls from reasoning
         text = self.think_pattern.sub("", text)
 

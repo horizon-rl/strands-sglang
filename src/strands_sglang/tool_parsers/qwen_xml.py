@@ -28,48 +28,27 @@ logger = logging.getLogger(__name__)
 
 @register_tool_parser("qwen_xml")
 class QwenXMLToolParser(ToolParser):
-    r"""Parser for Qwen3.5 and Qwen3-Coder XML tool call format.
+    r"""Parser for Qwen3.5/Qwen3-Coder attribute-style XML tool call format.
 
     Format:
+
         <tool_call>
         <function=function_name>
-        <parameter=param1>
-        value1
-        </parameter>
-        <parameter=param2>
-        value2
-        </parameter>
+        <parameter=param1>value1</parameter>
+        <parameter=param2>value2</parameter>
         </function>
         </tool_call>
 
-    Used by:
-    - Qwen3.5/Qwen3-Coder models
-
-    This format uses attribute-style XML tags where the function name and
-    parameter names are embedded in the tag itself (e.g., `<function=name>`
-    and `<parameter=name>`). Parameter values can span multiple lines.
-
-    Chat Template Notes:
-        Qwen Coder's chat template uses newline as separator between messages:
-        `<|im_start|>role\\ncontent<|im_end|>\\n<|im_start|>...`
+    Function and parameter names are embedded in tag attributes.
+    Think blocks are excluded to avoid parsing draft tool calls from reasoning.
     """
 
-    # Pattern to extract function name from <function=name>...</function>
     _FUNCTION_PATTERN = re.compile(r"<function=([^>]+)>(.*?)</function>", re.DOTALL)
-
-    # Pattern to extract parameters from <parameter=name>value</parameter>
     _PARAMETER_PATTERN = re.compile(r"<parameter=([^>]+)>(.*?)</parameter>", re.DOTALL)
 
     @override
     def parse(self, text: str) -> list[ToolParseResult]:
-        """Parse tool calls from model output.
-
-        Args:
-            text: Model output text.
-
-        Returns:
-            List of tool call results (successful and errors).
-        """
+        """Parse tool calls from model output."""
         # Remove think blocks to avoid parsing draft tool calls from reasoning
         text = self.think_pattern.sub("", text)
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tool call parser for GLM (ChatGLM) models."""
+"""GLM key-value XML tool call parser."""
 
 from __future__ import annotations
 
@@ -30,28 +30,18 @@ logger = logging.getLogger(__name__)
 
 @register_tool_parser("glm")
 class GLMToolParser(ToolParser):
-    """Parser for GLM XML key-value tool call format.
+    """Parser for GLM key-value XML tool call format.
 
     Format:
+
         <tool_call>function_name
-        <arg_key>key1</arg_key>
-        <arg_value>value1</arg_value>
-        <arg_key>key2</arg_key>
-        <arg_value>value2</arg_value>
+        <arg_key>key1</arg_key><arg_value>value1</arg_value>
+        <arg_key>key2</arg_key><arg_value>value2</arg_value>
         </tool_call>
 
-    This format uses a key-value pair structure where the function name
-    appears on the first line after <tool_call>, followed by alternating
-    <arg_key> and <arg_value> tags. Values can be plain strings or
-    JSON-encoded for non-string types.
-
-    Think Block Handling:
-        Models with reasoning capabilities may output draft tool calls
-        inside <think>...</think> blocks. These are excluded by default
-        to avoid executing planning/reasoning tool calls.
-
-    Chat Template Notes:
-        GLM uses no explicit separator between messages.
+    Function name is on the first line; arguments use alternating key/value tags.
+    Values are JSON-decoded when possible, otherwise kept as strings.
+    Think blocks are excluded to avoid parsing draft tool calls from reasoning.
     """
 
     ARG_PATTERN = re.compile(
@@ -61,17 +51,7 @@ class GLMToolParser(ToolParser):
 
     @override
     def parse(self, text: str) -> list[ToolParseResult]:
-        """Parse tool calls from GLM model output.
-
-        Extracts the function name from the first line after `<tool_call>`,
-        then parses `<arg_key>`/`<arg_value>` pairs into a dict.
-
-        Args:
-            text: Model output text.
-
-        Returns:
-            List of tool call results (successful and errors).
-        """
+        """Parse tool calls from model output."""
         # Remove think blocks to avoid parsing draft tool calls from reasoning
         text = self.think_pattern.sub("", text)
 
