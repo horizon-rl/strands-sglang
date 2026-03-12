@@ -65,8 +65,12 @@ class ToolParseResult:
 class ToolParser(ABC):
     """Base class for tool call parsers.
 
-    Subclasses implement `parse` to extract tool calls from model output.
-    Only JSONDecodeError is handled; Strands validates arguments downstream.
+    Notes:
+        - Subclasses implement `parse` to extract tool calls from model output.
+            - `<think>` blocks should be excluded to avoid parsing draft tool calls from reasoning.
+            - Best-effort extracted tool name is used for error handling.
+            - Arguments are passed as-is; Strands validates arguments downstream.
+        - Only `json.JSONDecodeError` is handled; Strands validates arguments downstream.
     """
 
     DEFAULT_TOOL_START_TOKEN = "<tool_call>"

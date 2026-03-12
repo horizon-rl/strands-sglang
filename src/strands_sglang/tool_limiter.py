@@ -26,21 +26,17 @@ logger = logging.getLogger(__name__)
 class MaxToolIterationsReachedError(Exception):
     """Raised when the `max_tool_iters` limit is reached.
 
-    This exception is raised after a complete iteration (model response + tool execution),
-    ensuring the trajectory is clean without requiring truncation.
+    Notes:
+        Raised after iteration completes, ensuring a clean trajectory without truncation.
     """
-
-    pass
 
 
 class MaxToolCallsReachedError(Exception):
     """Raised when the `max_tool_calls` limit is reached.
 
-    This exception is raised after a complete iteration (model response + tool execution),
-    ensuring the trajectory is clean without requiring truncation.
+    Notes:
+        Raised after iteration completes, ensuring a clean trajectory without truncation.
     """
-
-    pass
 
 
 class ToolLimiter(HookProvider):
@@ -75,8 +71,11 @@ class ToolLimiter(HookProvider):
                 One iteration = one model response with tool calls + execution.
                 Parallel tool calls count as one iteration. None means no limit.
             max_tool_calls: Maximum number of individual tool calls allowed.
-                Each tool call counts individually regardless of parallelism. None means no limit.
-            max_parallel_tool_calls: Maximum number of parallel tool calls allowed per model response. Excess calls are cancelled and returned to the
+                Each tool call counts individually regardless of parallelism.
+                Final count may exceed this limit if the last turn has multiple
+                parallel tool calls. None means no limit.
+            max_parallel_tool_calls: Maximum number of parallel tool calls allowed
+                per model response. Excess calls are cancelled and returned to the
                 model as error results. None means no limit.
         """
         self.max_tool_iters = max_tool_iters
@@ -99,8 +98,9 @@ class ToolLimiter(HookProvider):
     def _on_message_added(self, event: MessageAddedEvent) -> None:
         """Count iterations/calls and raise when limit exceeded.
 
-        - Counts on assistant messages with toolUse (model requesting tools)
-        - Raises on user messages with toolResult (iteration complete)
+        Notes:
+            - Counts on assistant messages with `toolUse` (model requesting tools)
+            - Raises on user messages with `toolResult` (iteration complete)
         """
         message = event.message
         content = message["content"]

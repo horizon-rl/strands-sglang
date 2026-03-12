@@ -21,13 +21,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class Token:
-    """A single token with its ID, logprob, and loss mask.
-
-    Attributes:
-        token_id: The token ID from the tokenizer vocabulary.
-        logprob: Log probability (None if not available).
-        loss_mask: Whether to include this token in loss computation.
-    """
+    """A single token with its ID, logprob, and loss mask."""
 
     token_id: int
     logprob: float | None = None
@@ -70,12 +64,7 @@ class TokenManager:
         self._segments = []
 
     def add_prompt(self, token_ids: list[int], logprobs: list[float] | None = None) -> None:
-        """Add a prompt segment (system messages, user input, tool results).
-
-        Args:
-            token_ids: Token IDs for this segment.
-            logprobs: Optional log probabilities (from forward pass).
-        """
+        """Add a prompt segment (system messages, user input, tool results)."""
         if not token_ids:
             return
         if logprobs is not None and len(logprobs) != len(token_ids):
@@ -92,16 +81,7 @@ class TokenManager:
         self._segments.append(tokens)
 
     def add_response(self, token_ids: list[int], logprobs: list[float] | None = None) -> None:
-        """Add a response segment (model output).
-
-        Args:
-            token_ids: Token IDs for this segment.
-            logprobs: Optional log probabilities for each token.
-
-        Raises:
-            RuntimeError: If no prompt segment has been added yet.
-            ValueError: If logprobs length doesn't match token_ids length.
-        """
+        """Add a response segment (model output)."""
         if not token_ids:
             return
         if not self._segments:
@@ -133,8 +113,8 @@ class TokenManager:
     def loss_mask(self) -> list[int]:
         """Get loss mask for all tokens (1 = model output, 0 = prompt/tool).
 
-        Use this for loss computation in RL training - only compute loss
-        on tokens where mask is 1 (model outputs).
+        Notes:
+            Only compute loss on tokens where mask is 1 (model outputs).
         """
         return [int(token.loss_mask) for token in self.tokens]
 
@@ -145,10 +125,11 @@ class TokenManager:
 
     @property
     def initial_prompt(self) -> list[Token]:
-        """Get the initial prompt tokens (segments[0]).
+        """Get the initial prompt tokens (`segments[0]`).
 
-        This is the full input context from the first generation call:
-        system prompt + tool definitions + user message (or conversation history).
+        Notes:
+            Contains the full input context from the first generation call:
+            system prompt + tool definitions + user message (or conversation history).
         """
         return self._segments[0] if self._segments else []
 
@@ -159,11 +140,7 @@ class TokenManager:
 
     @property
     def segment_info(self) -> list[tuple[bool, int]]:
-        """Get segment metadata (is_output, length) for each segment.
-
-        Returns:
-            List of (is_output, segment_length) tuples.
-        """
+        """Get segment metadata as `(is_output, length)` tuples."""
         return [(seg[0].loss_mask if seg else False, len(seg)) for seg in self._segments]
 
     def __len__(self) -> int:

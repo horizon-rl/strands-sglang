@@ -75,14 +75,7 @@ def get_client_from_slime_args(
 
 @cache
 def get_tokenizer(tokenizer_path: str) -> PreTrainedTokenizerBase:
-    """Get a shared (cached) tokenizer.
-
-    Args:
-        tokenizer_path: Path or HuggingFace model ID for the tokenizer.
-
-    Returns:
-        Cached tokenizer instance.
-    """
+    """Get a shared (cached) tokenizer."""
     from transformers import AutoTokenizer
 
     return AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)

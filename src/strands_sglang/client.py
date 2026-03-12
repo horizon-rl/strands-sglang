@@ -149,16 +149,8 @@ class SGLangClient:
     def _classify_http_error(status: int, body: str) -> SGLangHTTPError:
         """Classify an HTTP error into a specific custom exception.
 
-        This is the single source of truth for error classification. All HTTP errors
-        from SGLang are mapped to custom exceptions here, so that sglang.py never
-        needs to inspect raw status codes or response bodies.
-
-        Args:
-            status: HTTP status code.
-            body: Response body text.
-
-        Returns:
-            Appropriate SGLangHTTPError subclass instance.
+        Single source of truth for error classification — `sglang.py` never
+        inspects raw status codes or response bodies.
         """
         # Context length exceeded (400 + length keywords) — non-retryable
         if status == 400:
@@ -196,21 +188,10 @@ class SGLangClient:
         return True
 
     async def generate(self, input_ids: list[int], **kwargs: Any) -> dict[str, Any]:
-        """Generate from SGLang `/generate` endpoint.
+        """Call SGLang `/generate` endpoint with retry.
 
-        Args:
-            input_ids: Input token IDs. Do not set `text` when `input_ids` is provided.
-            **kwargs: Additional parameters passed directly to SGLang (see full list in SGLang documentation).
-
-        Returns:
-            Response dict with text, output_ids, meta_info (logprobs, finish_reason, etc.).
-
-        Raises:
-            SGLangContextLengthError: When prompt exceeds model's maximum context length.
-            SGLangThrottledError: On 429 or 503 responses.
-            SGLangHTTPError: For non-retryable HTTP errors (401, 403, 404) or after all retries exhausted.
-            SGLangConnectionError: For connection/timeout failures after retries exhausted.
-            SGLangDecodingError: When server returns non-JSON response after retries exhausted.
+        Notes:
+            Non-retryable: 401/403/404 and context-length 400s. All other errors are retried.
         """
         payload: dict[str, Any] = {
             "input_ids": input_ids,
@@ -275,11 +256,7 @@ class SGLangClient:
         raise RuntimeError("Unreachable: loop must return or raise")
 
     async def health(self) -> bool:
-        """Check if SGLang server is healthy.
-
-        Returns:
-            True if server responds OK to `/health` endpoint, False otherwise.
-        """
+        """Check if SGLang server is healthy."""
         try:
             session = self._get_session()
             async with session.get("/health") as resp:

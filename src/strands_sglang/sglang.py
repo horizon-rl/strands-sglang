@@ -106,11 +106,7 @@ class SGLangModel(Model):
         logger.debug("initialized with config: %s", self.config)
 
     def reset(self) -> None:
-        """Reset token accumulation for a new episode.
-
-        Call this at episode start. Clears all accumulated tokens and resets
-        internal state for tool tracking.
-        """
+        """Reset all state for a new episode."""
         self.token_manager.reset()
         self.message_count = 0
         self.tool_parse_errors = {}
@@ -131,20 +127,12 @@ class SGLangModel(Model):
 
     @override
     def update_config(self, **model_config: Unpack[SGLangConfig]) -> None:  # type: ignore[override]
-        """Update the model configuration.
-
-        Args:
-            **model_config: Configuration overrides.
-        """
+        """Update the model configuration."""
         self.config.update(model_config)
 
     @override
     def get_config(self) -> SGLangConfig:
-        """Get the model configuration.
-
-        Returns:
-            The model configuration dict.
-        """
+        """Get the model configuration."""
         return cast(SGLangModel.SGLangConfig, self.config)
 
     # -------------------------------------------------------------------------
@@ -249,7 +237,7 @@ class SGLangModel(Model):
     def sort_tool_results(messages: Messages) -> Messages:
         """Sort tool results by ID to match original call order.
 
-        Note:
+        Notes:
             In strands' format, parallel tool results are batched into a single message.
         """
         return [
@@ -267,9 +255,10 @@ class SGLangModel(Model):
     ) -> list[int]:
         """Tokenize prompt messages for the next generation call.
 
-        - First call: tokenizes full prompt with system prompt and tools.
-        - Subsequent calls: uses a fake prefix (system + user) for boundary formatting,
-        then subtracts it to extract only incremental tokens.
+        Notes:
+            - First call: tokenizes full prompt with system prompt and tools.
+            - Subsequent calls: uses a fake prefix (system + user) for boundary formatting,
+            then subtracts it to extract only incremental tokens.
         """
 
         # TODO: add support for other modalities (e.g. audio, video, etc.)
@@ -339,11 +328,7 @@ class SGLangModel(Model):
         system_prompt_content: list[SystemContentBlock] | None = None,
         **kwargs: Any,
     ) -> AsyncIterable[StreamEvent]:
-        """Chat completion with SGLangModel using the `/generate` endpoint.
-
-        The `stream` method follows Strands' protocol but actually disabled here for training-only usage.
-        This means users won't see streaming behavior such as print callbacks.
-        """
+        """Non-streaming chat completion via SGLang's `/generate` endpoint."""
         # Prepare request
         config = self.get_config()
         sampling_params: dict[str, Any] = dict(config.get("sampling_params") or {})
@@ -451,26 +436,10 @@ class SGLangModel(Model):
         system_prompt: str | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[dict[str, T | Any], None]:
-        """Get structured output using SGLang's constrained decoding.
+        """Structured output via SGLang's `json_schema` constrained decoding.
 
-        Uses SGLang's `json_schema` parameter for FSM-based constrained generation,
-        guaranteeing output conforms to the Pydantic model schema.
-
-        Note: This method does NOT update token_manager (no TITO tracking).
-        Intended for inference-only use cases like LLM-as-Judge.
-
-        Args:
-            output_model: Pydantic model class defining the output schema.
-            prompt: Messages to send to the model.
-            system_prompt: Optional system prompt.
-            **kwargs: Additional arguments (unused).
-
-        Yields:
-            Single dict with "output" key containing the parsed Pydantic model instance.
-
-        Raises:
-            ValidationError: If model output fails Pydantic validation.
-            SGLangHTTPError: On non-retryable HTTP errors.
+        Notes:
+            Does not update `token_manager` (no token trajectory tracking).
         """
         # Convert Pydantic model to JSON schema string
         json_schema = json.dumps(output_model.model_json_schema())
