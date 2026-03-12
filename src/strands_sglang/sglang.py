@@ -93,8 +93,8 @@ class SGLangModel(Model):
         self.tool_parser = tool_parser or HermesToolParser()
         self.config = dict(config)
         self._chat_template_kwargs: dict[str, Any] = {
-            "tokenize": False,  # never tokenize here
-            "enable_thinking": self.config.get("enable_thinking"),
+            "tokenize": False,
+            "enable_thinking": self.config.get("enable_thinking", True),
         }
 
         # State tracking (this makes SGLangModel stateful)

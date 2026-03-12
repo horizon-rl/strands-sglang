@@ -100,5 +100,5 @@ VLM tests require an SGLang server running a VLM model (e.g., `Qwen/Qwen3.5-4B`)
 
 ```bash
 # Run VLM tests specifically
-pytest tests/integration/test_vlm_integration.py -v --sglang-base-url=http://localhost:30000
+pytest tests/integration/test_sglang_vision.py -v --sglang-base-url=http://localhost:30000
 ```

@@ -14,9 +14,8 @@
 
 """Chat template tests against real HuggingFace tokenizers.
 
-This file is the source of truth for verifying that `message_separator` detection
-and `tokenize_prompt_messages` (incremental tokenization via prefix subtraction)
-work correctly across all supported model families.
+Source of truth for verifying `message_separator` detection and incremental
+tokenization (prefix subtraction) across all supported model families.
 
 Tests require network access to download tokenizers from HuggingFace on first run
 (cached afterwards). Mark: ``pytest -m chat_template``.
@@ -68,7 +67,6 @@ MODELS: list[ModelSpec] = [
 
 MODEL_IDS = [spec.id for spec in MODELS]
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -97,10 +95,6 @@ def client() -> SGLangClient:
     return SGLangClient(base_url="http://localhost:30000")
 
 
-def _get_spec(model_id: str) -> ModelSpec:
-    return next(s for s in MODELS if s.id == model_id)
-
-
 def _get_tokenizer(tokenizers: dict[str, Any], model_id: str) -> Any:
     """Get tokenizer for model_id, skipping if it failed to load."""
     tok = tokenizers[model_id]
@@ -117,29 +111,9 @@ def _make_model(client: SGLangClient, tokenizer: Any) -> SGLangModel:
 
 
 # ---------------------------------------------------------------------------
-# message_separator
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.chat_template
-class TestMessageSeparator:
-    """Verify message_separator auto-detection for each model family."""
-
-    @pytest.mark.parametrize("model_id", MODEL_IDS, ids=MODEL_IDS)
-    def test_separator(self, model_id: str, client: SGLangClient, tokenizers: dict[str, Any]) -> None:
-        spec = _get_spec(model_id)
-        tokenizer = _get_tokenizer(tokenizers, model_id)
-        model = _make_model(client, tokenizer)
-        assert model.message_separator == spec.separator, (
-            f"{model_id}: expected separator {spec.separator!r}, got {model.message_separator!r}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# tokenize_prompt_messages — prefix subtraction correctness
-# ---------------------------------------------------------------------------
-
 # Conversations for testing incremental tokenization
+# ---------------------------------------------------------------------------
+
 _FIRST_TURN = [{"role": "user", "content": [{"text": "What is 2+2?"}]}]
 
 _MULTI_TURN = [
@@ -174,126 +148,87 @@ _WITH_TOOL_RESULT = [
 SYSTEM_PROMPT = "You are a helpful assistant."
 
 
-@pytest.mark.chat_template
-class TestTokenizePromptMessages:
-    """Verify tokenize_prompt_messages correctness for each model.
+def _compute_incremental_text(model: SGLangModel, full_messages: list, message_count: int) -> str:
+    """Compute incremental text via prefix subtraction (reproduces tokenize_prompt_messages logic)."""
+    new_messages = full_messages[message_count:]
+    new_hf = model.format_messages(model.sort_tool_results(new_messages))
+    fake_hf = model.format_messages(
+        [
+            {"role": "system", "content": [{"text": "FAKE SYSTEM PROMPT"}]},
+            {"role": "user", "content": [{"text": "FAKE USER MESSAGE"}]},
+        ]
+    )
+    full_prompt = model.tokenizer.apply_chat_template(
+        conversation=fake_hf + new_hf, add_generation_prompt=True, **model._chat_template_kwargs
+    )
+    prefix_prompt = model.tokenizer.apply_chat_template(
+        conversation=fake_hf, add_generation_prompt=False, **model._chat_template_kwargs
+    )
+    return model.message_separator + full_prompt[len(prefix_prompt) :]
 
-    The key invariant for incremental tokenization: the incremental text
-    (message_separator + prefix-subtracted text) must be a suffix of the
-    full conversation text. This ensures the SGLang input, when concatenated
-    with previous prompt + response tokens, produces the correct full prompt.
-    """
+
+# ---------------------------------------------------------------------------
+# Test
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.chat_template
+class TestChatTemplate:
+    """Verify separator detection and incremental tokenization for each model family."""
 
     @pytest.mark.parametrize("model_id", MODEL_IDS, ids=MODEL_IDS)
-    def test_first_call_matches_full_tokenization(
-        self, model_id: str, client: SGLangClient, tokenizers: dict[str, Any]
-    ) -> None:
-        """First call to tokenize_prompt_messages should match direct encode of apply_chat_template."""
+    def test_tokenization_pipeline(self, model_id: str, client: SGLangClient, tokenizers: dict[str, Any]) -> None:
+        """Separator, first-call, multi-turn, and tool-result tokenization are all correct."""
+        spec = next(s for s in MODELS if s.id == model_id)
         tokenizer = _get_tokenizer(tokenizers, model_id)
         model = _make_model(client, tokenizer)
 
-        tokens = model.tokenize_prompt_messages(_FIRST_TURN, system_prompt=SYSTEM_PROMPT)
+        # 1. Separator detection
+        assert model.message_separator == spec.separator, (
+            f"{model_id}: expected separator {spec.separator!r}, got {model.message_separator!r}"
+        )
 
-        # Direct tokenization for comparison
+        # 2. First call matches full tokenization
+        tokens = model.tokenize_prompt_messages(_FIRST_TURN, system_prompt=SYSTEM_PROMPT)
         hf_messages = model.format_messages(_FIRST_TURN, system_prompt=SYSTEM_PROMPT)
         prompt = model.tokenizer.apply_chat_template(
-            tokenize=False, conversation=hf_messages, add_generation_prompt=True
+            conversation=hf_messages, add_generation_prompt=True, **model._chat_template_kwargs
         )
         expected = list(tokenizer.encode(prompt, add_special_tokens=False))
-
         assert tokens == expected
 
-    @pytest.mark.parametrize("model_id", MODEL_IDS, ids=MODEL_IDS)
-    def test_incremental_text_is_suffix_of_full(
-        self, model_id: str, client: SGLangClient, tokenizers: dict[str, Any]
-    ) -> None:
-        """Incremental text (separator + subtracted) must be a suffix of the full conversation.
-
-        After first generation, message_count = len(first_msgs) + 1. The incremental
-        call picks up messages[message_count:] = [user2]. The produced text should
-        match the tail of the full conversation text.
-        """
-        tokenizer = _get_tokenizer(tokenizers, model_id)
-        model = _make_model(client, tokenizer)
-
-        # Set up state as if first turn already happened
-        first_tokens = model.tokenize_prompt_messages(_FIRST_TURN, system_prompt=SYSTEM_PROMPT)
-        model.token_manager.add_prompt(first_tokens)
+        # 3. Multi-turn incremental text is suffix of full conversation
+        model.token_manager.add_prompt(tokens)
         model.token_manager.add_response([0])  # dummy response
         model.message_count = len(_FIRST_TURN) + 1  # +1 for assistant response
 
-        # Compute incremental text (reproduce tokenize_prompt_messages logic, pre-encoding)
-        new_messages = _MULTI_TURN[model.message_count :]
-        new_hf = model.format_messages(model.sort_tool_results(new_messages))
-        fake_hf = model.format_messages(
-            [
-                {"role": "system", "content": [{"text": "FAKE SYSTEM PROMPT"}]},
-                {"role": "user", "content": [{"text": "FAKE USER MESSAGE"}]},
-            ]
-        )
-        full_prompt = model.tokenizer.apply_chat_template(
-            tokenize=False, conversation=fake_hf + new_hf, add_generation_prompt=True
-        )
-        prefix_prompt = model.tokenizer.apply_chat_template(
-            tokenize=False, conversation=fake_hf, add_generation_prompt=False
-        )
-        incremental_text = model.message_separator + full_prompt[len(prefix_prompt) :]
-
-        # Full conversation text
+        incremental_text = _compute_incremental_text(model, _MULTI_TURN, model.message_count)
         hf_all = model.format_messages(_MULTI_TURN, system_prompt=SYSTEM_PROMPT)
-        full_text = model.tokenizer.apply_chat_template(tokenize=False, conversation=hf_all, add_generation_prompt=True)
-
+        full_text = model.tokenizer.apply_chat_template(
+            conversation=hf_all, add_generation_prompt=True, **model._chat_template_kwargs
+        )
         assert full_text.endswith(incremental_text), (
-            f"{model_id}: incremental text is not a suffix of full conversation.\n"
+            f"{model_id}: multi-turn incremental text is not a suffix of full conversation.\n"
             f"  full ends with: {full_text[-80:]!r}\n"
             f"  incremental:    {incremental_text!r}"
         )
 
-    @pytest.mark.parametrize(
-        "model_id",
-        MODEL_IDS,
-        ids=MODEL_IDS,
-    )
-    def test_incremental_tool_result_is_suffix_of_full(
-        self, model_id: str, client: SGLangClient, tokenizers: dict[str, Any]
-    ) -> None:
-        """Incremental text after tool use must be a suffix of the full conversation.
-
-        Known limitation: MiniMax-M2.5's template validates that tool messages must follow
-        an assistant with tool_calls. The fake prefix [sys, user] doesn't satisfy this.
-        """
-        if model_id == "MiniMaxAI/MiniMax-M2.5":
-            pytest.xfail("MiniMax template rejects tool result without preceding assistant tool_call")
-        tokenizer = _get_tokenizer(tokenizers, model_id)
-        model = _make_model(client, tokenizer)
-
-        # Set up state as if first turn (user + assistant with tool call) already happened
+        # 4. Tool result incremental text is suffix of full conversation
+        model.token_manager.reset()
+        model.message_count = 0
         first_tokens = model.tokenize_prompt_messages(_WITH_TOOL_RESULT[:1], system_prompt=SYSTEM_PROMPT)
         model.token_manager.add_prompt(first_tokens)
-        model.token_manager.add_response([0])  # dummy response
-        model.message_count = len(_WITH_TOOL_RESULT[:1]) + 1  # +1 for assistant response
+        model.token_manager.add_response([0])
+        model.message_count = len(_WITH_TOOL_RESULT[:1]) + 1
 
-        # Compute incremental text
-        new_messages = _WITH_TOOL_RESULT[model.message_count :]
-        new_hf = model.format_messages(model.sort_tool_results(new_messages))
-        fake_hf = model.format_messages(
-            [
-                {"role": "system", "content": [{"text": "FAKE SYSTEM PROMPT"}]},
-                {"role": "user", "content": [{"text": "FAKE USER MESSAGE"}]},
-            ]
-        )
-        full_prompt = model.tokenizer.apply_chat_template(
-            tokenize=False, conversation=fake_hf + new_hf, add_generation_prompt=True
-        )
-        prefix_prompt = model.tokenizer.apply_chat_template(
-            tokenize=False, conversation=fake_hf, add_generation_prompt=False
-        )
-        incremental_text = model.message_separator + full_prompt[len(prefix_prompt) :]
+        if model_id == "MiniMaxAI/MiniMax-M2.5":
+            pytest.xfail("MiniMax template rejects tool result without preceding assistant tool_call")
 
-        # Full conversation text
+        incremental_text = _compute_incremental_text(model, _WITH_TOOL_RESULT, model.message_count)
         hf_all = model.format_messages(_WITH_TOOL_RESULT, system_prompt=SYSTEM_PROMPT)
-        full_text = model.tokenizer.apply_chat_template(tokenize=False, conversation=hf_all, add_generation_prompt=True)
-
+        full_text = model.tokenizer.apply_chat_template(
+            conversation=hf_all, add_generation_prompt=True, **model._chat_template_kwargs
+        )
         assert full_text.endswith(incremental_text), (
             f"{model_id}: tool result incremental text is not a suffix of full conversation.\n"
             f"  full ends with: {full_text[-80:]!r}\n"

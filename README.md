@@ -47,7 +47,7 @@ pip install -e ".[dev]"
 
 ```bash
 python -m sglang.launch_server \
-    --model-path Qwen/Qwen3-4B-Instruct-2507 \
+    --model-path Qwen/Qwen3.5-4B \
     --port 30000 \
     --host 0.0.0.0
 ```
@@ -60,11 +60,12 @@ from transformers import AutoTokenizer
 from strands import Agent
 from strands_tools import calculator
 from strands_sglang import SGLangClient, SGLangModel
+from strands_sglang.tool_parsers import get_tool_parser
 
 async def main():
     client = SGLangClient(base_url="http://localhost:30000")
-    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Instruct-2507")
-    model = SGLangModel(client=client, tokenizer=tokenizer)
+    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3.5-4B")
+    model = SGLangModel(client=client, tokenizer=tokenizer, tool_parser=get_tool_parser("qwen_xml"))
     agent = Agent(model=model, tools=[calculator])
 
     result = await agent.invoke_async("What is 25 * 17?")
@@ -122,14 +123,14 @@ async def generate(args, sample: Sample, sampling_params) -> Sample:
         system_prompt=SYSTEM_PROMPT,
     )
 
+    # Don't set --apply-chat-template in rollout args, it will make user prompt wrapped twice
     prompt = sample.prompt if isinstance(sample.prompt, str) else sample.prompt[0]["content"]
 
     try:
         await agent.invoke_async(prompt)
         sample.status = Sample.Status.COMPLETED
     except Exception as e:
-        # Always use TRUNCATED instead of ABORTED because slime doesn't properly
-        # handle ABORTED samples in reward processing. See: https://github.com/THUDM/slime/issues/200
+        # Default all failed rollouts to TRUNCATED; customize your logic here if needed
         sample.status = Sample.Status.TRUNCATED
         logger.warning(f"TRUNCATED: {type(e).__name__}: {e}")
 
