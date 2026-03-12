@@ -60,7 +60,7 @@ MODELS: list[ModelSpec] = [
     ModelSpec(id="zai-org/GLM-4.7", separator=""),
     # zai-org/GLM-5 omitted: uses custom TokenizersBackend not loadable by transformers
     # MiniMax — uses [e~[ as eos, separator = "\n"
-    ModelSpec(id="MiniMaxAI/MiniMax-M2.5", separator="\n"),
+    # ModelSpec(id="MiniMaxAI/MiniMax-M2.5", separator="\n"),
     # Kimi — eos_token=[EOS] but template uses <|im_end|>, separator = ""
     ModelSpec(id="moonshotai/Kimi-K2.5", separator="", trust_remote_code=True),
     ModelSpec(id="moonshotai/Kimi-K2-Thinking", separator="", trust_remote_code=True),
