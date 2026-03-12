@@ -33,8 +33,9 @@ T = TypeVar("T", bound="ToolParser")
 class ToolParseResult:
     """A parsed tool call request.
 
-    - For successful parses: name and input are populated, raw is `None`.
-    - For parse errors: name is extracted or UNKNOWN_NAME, raw contains the unparsable content.
+    Notes:
+        - For successful parses: name and input are populated, raw is `None`.
+        - For parse errors: name is extracted or `UNKNOWN_NAME`, raw contains the unparsable content.
     """
 
     UNKNOWN_NAME: ClassVar[str] = "unknown_tool"
@@ -66,11 +67,11 @@ class ToolParser(ABC):
     """Base class for tool call parsers.
 
     Notes:
-        - Subclasses implement `parse` to extract tool calls from model output. Requires:
+        - Subclasses implement `parse` to extract tool calls from model output:
             - `<think>` blocks should be excluded to avoid parsing draft tool calls from reasoning.
             - Best-effort extracted tool name is used for error handling.
-            - Arguments are passed as-is; Strands validates arguments downstream.
-        - Only `json.JSONDecodeError` is handled; Strands validates arguments downstream.
+        - Only `json.JSONDecodeError` is handled; arguments are passed as-is
+          and validated by Strands downstream.
     """
 
     DEFAULT_TOOL_START_TOKEN = "<tool_call>"
