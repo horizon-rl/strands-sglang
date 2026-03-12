@@ -140,40 +140,6 @@ class TestFormatMessages:
         assert result[0]["content"] == "<tool_call>...</tool_call>"
 
 
-class TestApplyChatTemplate:
-    """Tests for apply_chat_template method."""
-
-    def test_applies_template(self, model, mock_tokenizer):
-        """Applies HF chat template and returns string."""
-        hf_messages = [{"role": "user", "content": "Hello"}]
-        result = model.apply_chat_template(hf_messages)
-
-        mock_tokenizer.apply_chat_template.assert_called_once()
-        assert result == "formatted prompt"
-
-    def test_with_system_prompt(self, model, mock_tokenizer):
-        """System prompt is passed via format_messages, not apply_chat_template."""
-        messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-        hf_messages = model.format_messages(messages, system_prompt="You are helpful.")
-
-        model.apply_chat_template(hf_messages)
-        call_kwargs = mock_tokenizer.apply_chat_template.call_args.kwargs
-        chat_messages = call_kwargs["conversation"]
-        assert chat_messages[0]["role"] == "system"
-        assert chat_messages[0]["content"] == "You are helpful."
-
-    def test_with_tools(self, model, mock_tokenizer):
-        """Tools are forwarded to apply_chat_template."""
-        hf_messages = [{"role": "user", "content": "Hello"}]
-        tools = [{"type": "function", "function": {"name": "test"}}]
-        model.apply_chat_template(hf_messages, tools=tools, add_generation_prompt=True)
-
-        call_kwargs = mock_tokenizer.apply_chat_template.call_args.kwargs
-        assert call_kwargs["tools"] == tools
-        assert call_kwargs["add_generation_prompt"] is True
-        assert call_kwargs["tokenize"] is False
-
-
 class TestTokenizePromptMessages:
     """Tests for tokenize_prompt_messages method."""
 

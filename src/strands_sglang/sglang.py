@@ -19,7 +19,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from collections.abc import AsyncGenerator, AsyncIterable, Callable, Iterator
+from collections.abc import AsyncGenerator, AsyncIterable, Iterator
 from functools import cached_property
 from typing import (
     Any,
@@ -92,6 +92,10 @@ class SGLangModel(Model):
         self.tokenizer = tokenizer
         self.tool_parser = tool_parser or HermesToolParser()
         self.config = dict(config)
+        self._chat_template_kwargs: dict[str, Any] = {
+            "tokenize": False,  # never tokenize here
+            "enable_thinking": self.config.get("enable_thinking"),
+        }
 
         # State tracking (this makes SGLangModel stateful)
         self.token_manager = TokenManager()
@@ -146,6 +150,23 @@ class SGLangModel(Model):
     # -------------------------------------------------------------------------
     # Chat template and message formatting
     # -------------------------------------------------------------------------
+
+    @cached_property
+    def message_separator(self) -> str:
+        """Auto-detect text bridging the previous response's stop token and the next message.
+
+        Probes the chat template with a terminal assistant message. The text after the
+        marker is `stop_token + separator`. Strip `stop_token` to get the separator if it exists.
+        """
+        probe = str(
+            self.tokenizer.apply_chat_template(
+                [{"role": "user", "content": "U"}, {"role": "assistant", "content": "__M__"}],
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+        )
+        sep = self.tokenizer.encode(probe.split("__M__", 1)[1], add_special_tokens=False)[1:]
+        return self.tokenizer.decode(sep) if sep else ""
 
     @classmethod
     def format_content_block(
@@ -224,25 +245,6 @@ class SGLangModel(Model):
             for spec in tool_specs
         ]
 
-    def apply_chat_template(
-        self,
-        hf_messages: list[dict[str, Any]],
-        tools: list[dict] | None = None,
-        add_generation_prompt: bool = False,
-        **kwargs: Any,
-    ) -> str:
-        """Apply the HuggingFace chat template to the messages."""
-        return str(
-            self.tokenizer.apply_chat_template(
-                conversation=hf_messages,
-                tools=cast(list[dict | Callable], tools),
-                add_generation_prompt=add_generation_prompt,
-                tokenize=False,  # never tokenize here
-                enable_thinking=self.config.get("enable_thinking"),
-                **kwargs,
-            )
-        )
-
     @staticmethod
     def extract_image_urls(messages: list[dict[str, Any]]) -> list[str]:
         """Extract image data URLs from HF-formatted multimodal messages."""
@@ -273,7 +275,12 @@ class SGLangModel(Model):
         if self.message_count == 0:
             hf_messages = self.format_messages(messages, system_prompt, is_multimodal=self.is_multimodal)
             self.image_data = self.extract_image_urls(hf_messages)
-            prompt = self.apply_chat_template(hf_messages, tools=tools, add_generation_prompt=True)
+            prompt = cast(
+                str,
+                self.tokenizer.apply_chat_template(
+                    hf_messages, tools=cast(list, tools), add_generation_prompt=True, **self._chat_template_kwargs
+                ),
+            )
             return list(self.tokenizer.encode(prompt, add_special_tokens=False))
 
         # Incremental: fake prefix subtraction with message_separator bridge
@@ -287,8 +294,18 @@ class SGLangModel(Model):
                 {"role": "user", "content": [{"text": "FAKE USER MESSAGE"}]},
             ]
             fake_hf_messages = self.format_messages(cast(Messages, fake_messages), is_multimodal=self.is_multimodal)
-            full_prompt = self.apply_chat_template(fake_hf_messages + new_hf_messages, add_generation_prompt=True)
-            prefix_prompt = self.apply_chat_template(fake_hf_messages, add_generation_prompt=False)
+            full_prompt = cast(
+                str,
+                self.tokenizer.apply_chat_template(
+                    fake_hf_messages + new_hf_messages, add_generation_prompt=True, **self._chat_template_kwargs
+                ),
+            )
+            prefix_prompt = cast(
+                str,
+                self.tokenizer.apply_chat_template(
+                    fake_hf_messages, add_generation_prompt=False, **self._chat_template_kwargs
+                ),
+            )
             assert full_prompt.startswith(prefix_prompt), "full prompt must start with prefix prompt"
             prompt = self.message_separator + full_prompt[len(prefix_prompt) :]
             return list(self.tokenizer.encode(prompt, add_special_tokens=False))
@@ -304,23 +321,6 @@ class SGLangModel(Model):
             else msg
             for msg in messages
         ]
-
-    @cached_property
-    def message_separator(self) -> str:
-        """Auto-detect text bridging the previous response's stop token and the next message.
-
-        Probes the chat template with a terminal assistant message. The text after the
-        marker is `stop_token + separator`. Strip `stop_token` to get the separator if it exists.
-        """
-        probe = str(
-            self.tokenizer.apply_chat_template(
-                [{"role": "user", "content": "U"}, {"role": "assistant", "content": "__M__"}],
-                tokenize=False,
-                add_generation_prompt=False,
-            )
-        )
-        sep = self.tokenizer.encode(probe.split("__M__", 1)[1], add_special_tokens=False)[1:]
-        return self.tokenizer.decode(sep) if sep else ""
 
     # -------------------------------------------------------------------------
     # Generation
@@ -491,7 +491,10 @@ class SGLangModel(Model):
 
         # Format and tokenize prompt (no tools for structured output)
         hf_messages = self.format_messages(prompt, system_prompt, is_multimodal=self.is_multimodal)
-        formatted_prompt = self.apply_chat_template(hf_messages, add_generation_prompt=True)
+        formatted_prompt = cast(
+            str,
+            self.tokenizer.apply_chat_template(hf_messages, add_generation_prompt=True, **self._chat_template_kwargs),
+        )
         input_ids = self.tokenizer.encode(formatted_prompt, add_special_tokens=False)
 
         # Build sampling params with json_schema constraint

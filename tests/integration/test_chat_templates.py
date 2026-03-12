@@ -196,7 +196,9 @@ class TestTokenizePromptMessages:
 
         # Direct tokenization for comparison
         hf_messages = model.format_messages(_FIRST_TURN, system_prompt=SYSTEM_PROMPT)
-        prompt = model.apply_chat_template(hf_messages, add_generation_prompt=True)
+        prompt = model.tokenizer.apply_chat_template(
+            tokenize=False, conversation=hf_messages, add_generation_prompt=True
+        )
         expected = list(tokenizer.encode(prompt, add_special_tokens=False))
 
         assert tokens == expected
@@ -229,13 +231,17 @@ class TestTokenizePromptMessages:
                 {"role": "user", "content": [{"text": "FAKE USER MESSAGE"}]},
             ]
         )
-        full_prompt = model.apply_chat_template(fake_hf + new_hf, add_generation_prompt=True)
-        prefix_prompt = model.apply_chat_template(fake_hf, add_generation_prompt=False)
+        full_prompt = model.tokenizer.apply_chat_template(
+            tokenize=False, conversation=fake_hf + new_hf, add_generation_prompt=True
+        )
+        prefix_prompt = model.tokenizer.apply_chat_template(
+            tokenize=False, conversation=fake_hf, add_generation_prompt=False
+        )
         incremental_text = model.message_separator + full_prompt[len(prefix_prompt) :]
 
         # Full conversation text
         hf_all = model.format_messages(_MULTI_TURN, system_prompt=SYSTEM_PROMPT)
-        full_text = model.apply_chat_template(hf_all, add_generation_prompt=True)
+        full_text = model.tokenizer.apply_chat_template(tokenize=False, conversation=hf_all, add_generation_prompt=True)
 
         assert full_text.endswith(incremental_text), (
             f"{model_id}: incremental text is not a suffix of full conversation.\n"
@@ -276,13 +282,17 @@ class TestTokenizePromptMessages:
                 {"role": "user", "content": [{"text": "FAKE USER MESSAGE"}]},
             ]
         )
-        full_prompt = model.apply_chat_template(fake_hf + new_hf, add_generation_prompt=True)
-        prefix_prompt = model.apply_chat_template(fake_hf, add_generation_prompt=False)
+        full_prompt = model.tokenizer.apply_chat_template(
+            tokenize=False, conversation=fake_hf + new_hf, add_generation_prompt=True
+        )
+        prefix_prompt = model.tokenizer.apply_chat_template(
+            tokenize=False, conversation=fake_hf, add_generation_prompt=False
+        )
         incremental_text = model.message_separator + full_prompt[len(prefix_prompt) :]
 
         # Full conversation text
         hf_all = model.format_messages(_WITH_TOOL_RESULT, system_prompt=SYSTEM_PROMPT)
-        full_text = model.apply_chat_template(hf_all, add_generation_prompt=True)
+        full_text = model.tokenizer.apply_chat_template(tokenize=False, conversation=hf_all, add_generation_prompt=True)
 
         assert full_text.endswith(incremental_text), (
             f"{model_id}: tool result incremental text is not a suffix of full conversation.\n"
