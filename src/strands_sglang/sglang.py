@@ -193,7 +193,8 @@ class SGLangModel(Model):
         result: list[dict[str, Any]] = []
 
         if system_prompt:
-            result.append({"role": "system", "content": system_prompt})
+            content: Any = [{"type": "text", "text": system_prompt}] if is_multimodal else system_prompt
+            result.append({"role": "system", "content": content})
 
         # Each Strands message is {"role": str, "content": [ContentBlock, ...]}
         # One Strands message maps to one HF message, except toolResult blocks
