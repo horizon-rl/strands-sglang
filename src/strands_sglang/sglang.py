@@ -19,7 +19,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from collections.abc import AsyncGenerator, AsyncIterable, Iterator
+from collections.abc import AsyncGenerator, AsyncIterable
 from functools import cached_property
 from typing import (
     Any,
@@ -43,7 +43,7 @@ from typing_extensions import Unpack, override
 from .client import SGLangClient
 from .exceptions import SGLangContextLengthError, SGLangThrottledError
 from .token import TokenManager
-from .tool_parsers import HermesToolParser, ToolParser, ToolParseResult
+from .tool_parsers import HermesToolParser, ToolParser
 
 logger = logging.getLogger(__name__)
 
@@ -246,24 +246,24 @@ class SGLangModel(Model):
         ]
 
     @staticmethod
-    def extract_image_urls(messages: list[dict[str, Any]]) -> list[str]:
-        """Extract image data URLs from HF-formatted multimodal messages."""
-        urls: list[str] = []
-        for msg in messages:
-            content = msg.get("content")
-            if isinstance(content, dict) and content.get("type") == "image":
-                urls.append(content["image"])
-            elif isinstance(content, list):
-                for part in content:
-                    if isinstance(part, dict) and part.get("type") == "image":
-                        urls.append(part["image"])
-        return urls
+    def sort_tool_results(messages: Messages) -> Messages:
+        """Sort tool results by ID to match original call order.
+
+        Note:
+            In strands' format, parallel tool results are batched into a single message.
+        """
+        return [
+            {**msg, "content": sorted(msg["content"], key=lambda c: c["toolResult"]["toolUseId"])}
+            if "toolResult" in msg["content"][0]
+            else msg
+            for msg in messages
+        ]
 
     def tokenize_prompt_messages(
         self,
         messages: Messages,
         system_prompt: str | None,
-        tools: list[dict] | None = None,
+        tool_specs: list[ToolSpec] | None = None,
     ) -> list[int]:
         """Tokenize prompt messages for the next generation call.
 
@@ -271,10 +271,22 @@ class SGLangModel(Model):
         - Subsequent calls: uses a fake prefix (system + user) for boundary formatting,
         then subtracts it to extract only incremental tokens.
         """
+
+        # TODO: add support for other modalities (e.g. audio, video, etc.)
+        def update_multimodal_data(hf_messages: list[dict[str, Any]]) -> None:
+            if not self.is_multimodal:
+                return
+            for msg in hf_messages:
+                for part in msg["content"]:
+                    match part.get("type"):
+                        case "image":
+                            self.image_data.append(part["image"])
+
         # First call: full prompt with tools
         if self.message_count == 0:
             hf_messages = self.format_messages(messages, system_prompt, is_multimodal=self.is_multimodal)
-            self.image_data = self.extract_image_urls(hf_messages)
+            update_multimodal_data(hf_messages)
+            tools = self.format_tool_specs(tool_specs) if tool_specs else None
             prompt = cast(
                 str,
                 self.tokenizer.apply_chat_template(
@@ -288,7 +300,7 @@ class SGLangModel(Model):
             new_hf_messages = self.format_messages(
                 self.sort_tool_results(messages[self.message_count :]), is_multimodal=self.is_multimodal
             )
-            self.image_data.extend(self.extract_image_urls(new_hf_messages))
+            update_multimodal_data(new_hf_messages)
             fake_messages = [
                 {"role": "system", "content": [{"text": "FAKE SYSTEM PROMPT"}]},
                 {"role": "user", "content": [{"text": "FAKE USER MESSAGE"}]},
@@ -312,57 +324,9 @@ class SGLangModel(Model):
 
         raise RuntimeError(f"No new messages to tokenize (message_count={self.message_count}, got {len(messages)})")
 
-    @staticmethod
-    def sort_tool_results(messages: Messages) -> Messages:
-        """Sort tool results by ID to match original call order."""
-        return [
-            {**msg, "content": sorted(msg["content"], key=lambda c: c["toolResult"]["toolUseId"])}
-            if "toolResult" in msg["content"][0]
-            else msg
-            for msg in messages
-        ]
-
     # -------------------------------------------------------------------------
     # Generation
     # -------------------------------------------------------------------------
-
-    def _yield_tool_use_events(
-        self,
-        tool_calls: list[ToolParseResult],
-    ) -> Iterator[StreamEvent]:
-        """Yield toolUse stream events for parsed tool calls.
-
-        Each tool call emits three events following the Strands streaming protocol:
-        - `contentBlockStart`: begins block with toolUseId and name
-        - `contentBlockDelta`: contains the tool input (delta = incremental data)
-        - `contentBlockStop`: ends the block
-        """
-        for tool_call in tool_calls:
-            if tool_call.is_error:
-                logger.warning("Tool parse error for '%s': %s", tool_call.name, (tool_call.raw or "")[:100])
-                # Track parse error count per tool name
-                self.tool_parse_errors[tool_call.name] = self.tool_parse_errors.get(tool_call.name, 0) + 1
-
-            yield {
-                "contentBlockStart": {
-                    "start": {
-                        "toolUse": {
-                            "toolUseId": tool_call.id,
-                            "name": tool_call.name,
-                        }
-                    }
-                }
-            }
-            yield {
-                "contentBlockDelta": {
-                    "delta": {
-                        "toolUse": {
-                            "input": tool_call.payload,
-                        }
-                    }
-                }
-            }
-            yield {"contentBlockStop": {}}
 
     @override
     async def stream(
@@ -385,8 +349,7 @@ class SGLangModel(Model):
         sampling_params: dict[str, Any] = dict(config.get("sampling_params") or {})
         sampling_params.setdefault("skip_special_tokens", False)
         return_logprob = config.get("return_logprob", True)
-        tools = self.format_tool_specs(tool_specs) if tool_specs else None
-        new_input_ids = self.tokenize_prompt_messages(messages, system_prompt, tools=tools)
+        new_input_ids = self.tokenize_prompt_messages(messages, system_prompt, tool_specs=tool_specs)
         # Tracking token IDs in token_manager to ensure the token-in feature
         input_ids = self.token_manager.token_ids + new_input_ids
 
@@ -435,8 +398,31 @@ class SGLangModel(Model):
 
         # Assistant message tool use content - start, delta, stop
         parsed_tool_calls = self.tool_parser.parse(text)
-        for event in self._yield_tool_use_events(parsed_tool_calls):
-            yield event
+        for tool_call in parsed_tool_calls:
+            if tool_call.is_error:
+                logger.warning("Tool parse error for '%s': %s", tool_call.name, (tool_call.raw or "")[:100])
+                self.tool_parse_errors[tool_call.name] = self.tool_parse_errors.get(tool_call.name, 0) + 1
+
+            yield {
+                "contentBlockStart": {
+                    "start": {
+                        "toolUse": {
+                            "toolUseId": tool_call.id,
+                            "name": tool_call.name,
+                        }
+                    }
+                }
+            }
+            yield {
+                "contentBlockDelta": {
+                    "delta": {
+                        "toolUse": {
+                            "input": tool_call.payload,
+                        }
+                    }
+                }
+            }
+            yield {"contentBlockStop": {}}
 
         # Assistant message stop
         stop_reason: str = "tool_use" if parsed_tool_calls else "end_turn"

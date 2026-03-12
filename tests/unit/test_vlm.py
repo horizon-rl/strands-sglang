@@ -207,47 +207,6 @@ class TestFormatMessagesMultimodal:
 
 
 # ---------------------------------------------------------------------------
-# extract_image_urls
-# ---------------------------------------------------------------------------
-
-
-class TestExtractImageUrls:
-    def test_extracts_from_image_messages(self):
-        messages = [
-            {"role": "user", "content": {"type": "image", "image": "data:image/png;base64,abc"}},
-            {"role": "user", "content": {"type": "text", "text": "describe this"}},
-            {"role": "user", "content": {"type": "image", "image": "data:image/jpeg;base64,xyz"}},
-        ]
-        result = SGLangModel.extract_image_urls(messages)
-        assert result == ["data:image/png;base64,abc", "data:image/jpeg;base64,xyz"]
-
-    def test_no_images(self):
-        messages = [{"role": "user", "content": "plain text"}]
-        assert SGLangModel.extract_image_urls(messages) == []
-
-    def test_skips_string_content(self):
-        """Text-only formatted messages have string content — should be skipped."""
-        messages = [
-            {"role": "user", "content": "hello"},
-            {"role": "user", "content": {"type": "image", "image": "data:image/png;base64,abc"}},
-        ]
-        assert SGLangModel.extract_image_urls(messages) == ["data:image/png;base64,abc"]
-
-    def test_extracts_from_list_content(self):
-        """Images in list content (grouped multimodal messages) are extracted."""
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "describe"},
-                    {"type": "image", "image": "data:image/png;base64,abc"},
-                ],
-            }
-        ]
-        assert SGLangModel.extract_image_urls(messages) == ["data:image/png;base64,abc"]
-
-
-# ---------------------------------------------------------------------------
 # tokenize_prompt_messages — VLM path
 # ---------------------------------------------------------------------------
 

@@ -20,7 +20,6 @@ import pytest
 
 from strands_sglang import SGLangModel
 from strands_sglang.client import SGLangClient
-from strands_sglang.tool_parsers import ToolParseResult
 
 
 @pytest.fixture
@@ -146,9 +145,9 @@ class TestTokenizePromptMessages:
     def test_first_call_tokenizes_full_prompt(self, model, mock_tokenizer):
         """First call tokenizes full prompt with system and tools."""
         messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-        tools = [{"type": "function", "function": {"name": "test"}}]
+        tool_specs = [{"name": "test", "description": "A test tool", "inputSchema": {"json": {"type": "object"}}}]
 
-        result = model.tokenize_prompt_messages(messages, system_prompt="Be helpful.", tools=tools)
+        result = model.tokenize_prompt_messages(messages, system_prompt="Be helpful.", tool_specs=tool_specs)
 
         assert result == [1, 2, 3, 4, 5]
         mock_tokenizer.encode.assert_called_once()
@@ -183,53 +182,6 @@ class TestTokenizePromptMessages:
 
         with pytest.raises(RuntimeError, match="No new messages to tokenize"):
             model.tokenize_prompt_messages(messages, system_prompt=None)
-
-
-class TestYieldToolUseEvents:
-    """Tests for _yield_tool_use_events method."""
-
-    def test_single_tool_call(self, model):
-        """Yield events for single tool call."""
-        tool_calls = [ToolParseResult(id="call_123", name="calculator", input={"expr": "2+2"})]
-        events = list(model._yield_tool_use_events(tool_calls))
-
-        assert len(events) == 3
-        # contentBlockStart
-        assert "contentBlockStart" in events[0]
-        assert events[0]["contentBlockStart"]["start"]["toolUse"]["name"] == "calculator"
-        assert events[0]["contentBlockStart"]["start"]["toolUse"]["toolUseId"] == "call_123"
-        # contentBlockDelta
-        assert "contentBlockDelta" in events[1]
-        assert '"expr": "2+2"' in events[1]["contentBlockDelta"]["delta"]["toolUse"]["input"]
-        # contentBlockStop
-        assert events[2] == {"contentBlockStop": {}}
-
-    def test_multiple_tool_calls(self, model):
-        """Yield events for multiple tool calls."""
-        tool_calls = [
-            ToolParseResult(id="call_1", name="tool1", input={}),
-            ToolParseResult(id="call_2", name="tool2", input={}),
-        ]
-        events = list(model._yield_tool_use_events(tool_calls))
-
-        # 3 events per tool call
-        assert len(events) == 6
-        assert events[0]["contentBlockStart"]["start"]["toolUse"]["name"] == "tool1"
-        assert events[3]["contentBlockStart"]["start"]["toolUse"]["name"] == "tool2"
-
-    def test_empty_tool_calls(self, model):
-        """No tool calls yields no events."""
-        events = list(model._yield_tool_use_events([]))
-        assert events == []
-
-    def test_error_tool_call(self, model):
-        """Error tool call includes raw content."""
-        tool_calls = [ToolParseResult(id="call_err", name="broken", input={}, raw="invalid json")]
-        events = list(model._yield_tool_use_events(tool_calls))
-
-        assert len(events) == 3
-        # Error tool call uses raw content as payload
-        assert events[1]["contentBlockDelta"]["delta"]["toolUse"]["input"] == "invalid json"
 
 
 class TestReset:
