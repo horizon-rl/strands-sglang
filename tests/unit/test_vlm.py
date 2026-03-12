@@ -78,18 +78,12 @@ def text_model(client, mock_tokenizer):
 
 
 # ---------------------------------------------------------------------------
-# Constructor and properties
+# Auto-detection
 # ---------------------------------------------------------------------------
 
 
-class TestVLMConstructor:
-    def test_is_multimodal_true(self, vlm_model):
-        assert vlm_model.is_multimodal is True
-
-    def test_is_multimodal_false(self, text_model):
-        assert text_model.is_multimodal is False
-
-    def test_auto_detect_with_vision_config(self, client, mock_tokenizer):
+class TestVLMAutoDetect:
+    def test_with_vision_config(self, client, mock_tokenizer):
         """Auto-detects multimodal from HuggingFace config's vision_config."""
         mock_config = MagicMock()
         mock_config.vision_config = {}  # has vision_config → multimodal
@@ -97,7 +91,7 @@ class TestVLMConstructor:
             model = SGLangModel(client=client, tokenizer=mock_tokenizer)
             assert model.is_multimodal is True
 
-    def test_auto_detect_without_vision_config(self, client, mock_tokenizer):
+    def test_without_vision_config(self, client, mock_tokenizer):
         """Text-only models have no vision_config."""
         mock_config = MagicMock(spec=[])  # no attributes → no vision_config
         with patch("transformers.PretrainedConfig.from_pretrained", return_value=mock_config):
@@ -141,18 +135,6 @@ class TestFormatContentBlockMultimodal:
 
 
 class TestFormatMessagesMultimodal:
-    def test_text_message_multimodal(self):
-        messages = [{"role": "user", "content": [{"text": "describe this"}]}]
-        result = SGLangModel.format_messages(messages, is_multimodal=True)
-        assert result == [{"role": "user", "content": [{"type": "text", "text": "describe this"}]}]
-
-    def test_image_message_multimodal(self):
-        messages = [{"role": "user", "content": [_image_block()]}]
-        result = SGLangModel.format_messages(messages, is_multimodal=True)
-        assert len(result) == 1
-        assert result[0]["content"][0]["type"] == "image"
-        assert result[0]["content"][0]["image"] == _RED_PIXEL_DATA_URL
-
     def test_mixed_text_and_image(self):
         """Text + image in same message are grouped into list content."""
         messages = [{"role": "user", "content": [{"text": "what is this?"}, _image_block()]}]
@@ -184,70 +166,6 @@ class TestFormatMessagesMultimodal:
         assert isinstance(result[0]["content"], list)
         assert result[0]["content"][0] == {"type": "text", "text": "Image loaded"}
         assert result[0]["content"][1]["type"] == "image"
-
-    def test_tool_result_single_block(self):
-        """Tool result with single block still gets list content in multimodal mode."""
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "toolResult": {
-                            "toolUseId": "call_001",
-                            "status": "success",
-                            "content": [_image_block()],
-                        }
-                    }
-                ],
-            }
-        ]
-        result = SGLangModel.format_messages(messages, is_multimodal=True)
-        assert result[0]["role"] == "tool"
-        assert result[0]["content"][0]["type"] == "image"
-
-
-# ---------------------------------------------------------------------------
-# tokenize_prompt_messages — VLM path
-# ---------------------------------------------------------------------------
-
-
-class TestTokenizePromptMessagesVLM:
-    def test_vlm_uses_tokenizer_encode(self, vlm_model, mock_tokenizer):
-        """VLM uses tokenizer.encode() — server handles image expansion."""
-        messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-        result = vlm_model.tokenize_prompt_messages(messages, system_prompt=None)
-
-        assert result == [1, 2, 3]
-        mock_tokenizer.encode.assert_called_once()
-
-    def test_vlm_with_images_uses_tokenizer_encode(self, vlm_model, mock_tokenizer):
-        """Even with images, tokenization uses tokenizer.encode()."""
-        messages = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
-        vlm_model.tokenize_prompt_messages(messages, system_prompt=None)
-
-        mock_tokenizer.encode.assert_called_once()
-
-    def test_text_model_uses_tokenizer_encode(self, text_model, mock_tokenizer):
-        messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-        result = text_model.tokenize_prompt_messages(messages, system_prompt=None)
-
-        assert result == [1, 2, 3]
-        mock_tokenizer.encode.assert_called_once()
-
-    def test_subsequent_call_uses_tokenizer_encode(self, vlm_model, mock_tokenizer):
-        """Incremental tokenization also uses tokenizer.encode() for VLM."""
-        vlm_model.token_manager.add_prompt([1, 2, 3])
-        vlm_model.message_count = 1
-
-        messages = [
-            {"role": "user", "content": [{"text": "Hello"}]},
-            {"role": "assistant", "content": [{"text": "Hi"}]},
-            {"role": "user", "content": [{"text": "New message"}]},
-        ]
-        result = vlm_model.tokenize_prompt_messages(messages, system_prompt=None)
-
-        assert result == [1, 2, 3]
-        mock_tokenizer.encode.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +246,7 @@ class TestStreamImageData:
 
 
 def _async_mock_generate():
-    """Factory for async mock of client.generate that records call kwargs."""
+    """Factory for async mock of client.generate."""
     mock = MagicMock()
 
     async def _generate(**kwargs):

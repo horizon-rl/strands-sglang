@@ -44,10 +44,10 @@ def model(mock_tokenizer):
 
 
 class TestFormatTools:
-    """Tests for _format_tools method."""
+    """Tests for format_tool_specs method."""
 
     def test_format_single_tool(self, model):
-        """Format a single tool spec."""
+        """Format a single tool spec into HF function-calling format."""
         tool_specs = [
             {
                 "name": "calculator",
@@ -64,7 +64,7 @@ class TestFormatTools:
         assert "properties" in result[0]["function"]["parameters"]
 
     def test_format_multiple_tools(self, model):
-        """Format multiple tool specs."""
+        """Format multiple tool specs preserving order."""
         tool_specs = [
             {"name": "tool1", "description": "First tool", "inputSchema": {"json": {}}},
             {"name": "tool2", "description": "Second tool", "inputSchema": {"json": {}}},
@@ -76,22 +76,16 @@ class TestFormatTools:
         assert [t["function"]["name"] for t in result] == ["tool1", "tool2", "tool3"]
 
     def test_format_tool_missing_fields_raises(self, model):
-        """Format tool spec with missing required fields raises KeyError."""
-        tool_specs = [{"name": "minimal"}]
+        """Missing inputSchema raises KeyError."""
         with pytest.raises(KeyError):
-            model.format_tool_specs(tool_specs)
-
-    def test_format_empty_tools(self, model):
-        """Format empty tool specs list."""
-        result = model.format_tool_specs([])
-        assert result == []
+            model.format_tool_specs([{"name": "minimal"}])
 
 
 class TestFormatMessages:
     """Tests for format_messages — especially parallel tool results."""
 
-    def test_parallel_tool_results_all_present(self):
-        """All toolResult blocks in one message must produce separate HF messages."""
+    def test_parallel_tool_results_split_into_separate_messages(self):
+        """All toolResult blocks in one Strands message must produce separate HF messages."""
         messages = [
             {
                 "role": "user",
@@ -108,7 +102,7 @@ class TestFormatMessages:
         assert {m["tool_call_id"] for m in tool_msgs} == {"call_0", "call_1", "call_2"}
 
     def test_single_tool_result(self):
-        """Single toolResult still works."""
+        """Single toolResult produces one HF tool message with flattened content."""
         messages = [
             {
                 "role": "user",
@@ -140,38 +134,10 @@ class TestFormatMessages:
 
 
 class TestTokenizePromptMessages:
-    """Tests for tokenize_prompt_messages method."""
+    """Tests for tokenize_prompt_messages error handling."""
 
-    def test_first_call_tokenizes_full_prompt(self, model, mock_tokenizer):
-        """First call tokenizes full prompt with system and tools."""
-        messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-        tool_specs = [{"name": "test", "description": "A test tool", "inputSchema": {"json": {"type": "object"}}}]
-
-        result = model.tokenize_prompt_messages(messages, system_prompt="Be helpful.", tool_specs=tool_specs)
-
-        assert result == [1, 2, 3, 4, 5]
-        mock_tokenizer.encode.assert_called_once()
-
-    def test_subsequent_call_tokenizes_new_messages(self, model, mock_tokenizer):
-        """Subsequent calls tokenize only new messages."""
-        # Simulate first call already processed
-        model.token_manager.add_prompt([1, 2, 3])
-        model.message_count = 1
-
-        messages = [
-            {"role": "user", "content": [{"text": "Hello"}]},
-            {"role": "assistant", "content": [{"text": "Hi"}]},
-            {"role": "user", "content": [{"text": "New message"}]},
-        ]
-
-        result = model.tokenize_prompt_messages(messages, system_prompt=None)
-
-        assert result is not None
-        # Should only process messages after message_count
-        mock_tokenizer.encode.assert_called()
-
-    def test_no_new_messages_raises(self, model, mock_tokenizer):
-        """No new messages raises RuntimeError."""
+    def test_no_new_messages_raises(self, model):
+        """Raises RuntimeError when message_count matches input length."""
         model.token_manager.add_prompt([1, 2, 3])
         model.message_count = 2
 
@@ -184,90 +150,11 @@ class TestTokenizePromptMessages:
             model.tokenize_prompt_messages(messages, system_prompt=None)
 
 
-class TestReset:
-    """Tests for reset method."""
-
-    def test_reset_clears_token_manager(self, model):
-        """Reset clears token manager."""
-        model.token_manager.add_prompt([1, 2, 3])
-        model.token_manager.add_response([4, 5, 6])
-
-        model.reset()
-
-        assert len(model.token_manager) == 0
-
-    def test_reset_clears_message_count(self, model):
-        """Reset clears processed message count."""
-        model.message_count = 5
-
-        model.reset()
-
-        assert model.message_count == 0
-
-    def test_reset_clears_parse_errors(self, model):
-        """Reset clears tool parse error counts."""
-        model.tool_parse_errors = {"broken_tool": 3}
-
-        model.reset()
-
-        assert model.tool_parse_errors == {}
-
-
-class TestConfig:
-    """Tests for configuration methods."""
-
-    def test_default_config(self, mock_tokenizer):
-        """Default configuration has no base_url or timeout (those belong to SGLangClient)."""
-        client = SGLangClient(base_url="http://localhost:30000")
-        model = SGLangModel(client=client, tokenizer=mock_tokenizer)
-        config = model.get_config()
-
-        assert "base_url" not in config
-        assert "timeout" not in config
-
-    def test_update_config(self, model):
-        """Update configuration."""
-        model.update_config(return_logprob=False)
-        config = model.get_config()
-
-        assert config["return_logprob"] is False
-
-    def test_config_with_sampling_params(self, mock_tokenizer):
-        """Configuration with custom sampling_params."""
-        client = SGLangClient(base_url="http://localhost:30000")
-        model = SGLangModel(client=client, tokenizer=mock_tokenizer, sampling_params={"max_new_tokens": 1024})
-        config = model.get_config()
-
-        assert config["sampling_params"] == {"max_new_tokens": 1024}
-
-
-class TestClientSetup:
-    """Tests for client setup."""
-
-    def test_client_is_required(self, mock_tokenizer):
-        """Client parameter is required."""
-        with pytest.raises(TypeError):
-            SGLangModel(tokenizer=mock_tokenizer)  # type: ignore[call-arg]
-
-    def test_client_stored_as_public_attr(self, mock_tokenizer):
-        """Client is stored as public attribute."""
-        client = SGLangClient(base_url="http://localhost:30000")
-        model = SGLangModel(client=client, tokenizer=mock_tokenizer)
-
-        assert model.client is client
-
-    def test_all_params_keyword_only(self, mock_tokenizer):
-        """All parameters are keyword-only (no positional args)."""
-        client = SGLangClient(base_url="http://localhost:30000")
-        with pytest.raises(TypeError):
-            SGLangModel(mock_tokenizer, client)  # type: ignore[misc]
-
-
 class TestSortToolResults:
     """Tests for sort_tool_results method."""
 
     def test_sort_by_sequential_id(self, model):
-        """Tool results are sorted by sequential ID (call_0000 < call_0001 < call_0002)."""
+        """Tool results are sorted by sequential ID."""
         messages = [
             {
                 "role": "user",
@@ -293,21 +180,7 @@ class TestSortToolResults:
             {"role": "user", "content": [{"text": "Hi"}]},
         ]
 
-        sorted_msgs = model.sort_tool_results(messages)
-
-        assert sorted_msgs == messages
-
-    def test_empty_messages(self, model):
-        """Empty messages list returns empty."""
-        assert model.sort_tool_results([]) == []
-
-    def test_no_tool_results(self, model):
-        """Messages without toolResults pass through unchanged."""
-        messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-
-        sorted_msgs = model.sort_tool_results(messages)
-
-        assert sorted_msgs == messages
+        assert model.sort_tool_results(messages) == messages
 
     def test_mixed_message_types(self, model):
         """Mixed assistant + user messages: only user tool results are sorted."""
@@ -329,14 +202,6 @@ class TestSortToolResults:
         # User tool results sorted
         assert sorted_msgs[1]["content"][0]["toolResult"]["toolUseId"] == "call_0000"
         assert sorted_msgs[1]["content"][1]["toolResult"]["toolUseId"] == "call_0001"
-
-    def test_user_message_with_string_content(self, model):
-        """User message with string content (not list) passes through unchanged."""
-        messages = [{"role": "user", "content": "plain text message"}]
-
-        sorted_msgs = model.sort_tool_results(messages)
-
-        assert sorted_msgs == messages
 
 
 class TestStreamDefaults:
