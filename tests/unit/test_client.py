@@ -140,7 +140,7 @@ class TestClassifyHTTPError:
 class TestRetryableErrors:
     """Tests for _is_retryable_error method.
 
-    Aligned with SLIME: retry aggressively on most errors.
+    Aligned with slime: retry aggressively on most errors.
     From OpenAI: 408 (Request Timeout) and 429 (Rate Limited) ARE retried.
     """
 
@@ -161,7 +161,7 @@ class TestRetryableErrors:
         assert client._is_retryable_error(error) is True
 
     def test_generic_exception_is_retryable(self, client):
-        """Generic exceptions are retryable (SLIME philosophy)."""
+        """Generic exceptions are retryable (slime philosophy)."""
         error = ValueError("Something wrong")
         assert client._is_retryable_error(error) is True
 

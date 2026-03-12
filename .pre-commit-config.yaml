@@ -37,6 +37,11 @@ repos:
 
   - repo: local
     hooks:
+      - id: slime-casing
+        name: Enforce lowercase "slime"
+        entry: sed -i '' -E 's/([^a-zA-Z]|^)(SLIME|Slime)([^a-zA-Z]|$)/\1slime\3/g'
+        language: system
+        types_or: [python, markdown]
       - id: mypy
         name: Type check (mypy)
         entry: mypy src/strands_sglang
