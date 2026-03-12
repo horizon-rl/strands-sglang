@@ -76,7 +76,11 @@ MODEL_IDS = [spec.id for spec in MODELS]
 
 @pytest.fixture(scope="session")
 def tokenizers() -> dict[str, Any]:
-    """Load and cache all tokenizers once per session."""
+    """Load and cache all tokenizers once per session.
+
+    Models that fail to load (e.g. missing `tiktoken`) are stored as the
+    exception string so individual tests can skip gracefully.
+    """
     from transformers import AutoTokenizer
 
     loaded: dict[str, Any] = {}
@@ -84,7 +88,7 @@ def tokenizers() -> dict[str, Any]:
         try:
             loaded[spec.id] = AutoTokenizer.from_pretrained(spec.id, trust_remote_code=spec.trust_remote_code)
         except Exception as e:
-            pytest.skip(f"Cannot load tokenizer for {spec.id}: {e}")
+            loaded[spec.id] = f"Cannot load tokenizer: {e}"
     return loaded
 
 
@@ -95,6 +99,14 @@ def client() -> SGLangClient:
 
 def _get_spec(model_id: str) -> ModelSpec:
     return next(s for s in MODELS if s.id == model_id)
+
+
+def _get_tokenizer(tokenizers: dict[str, Any], model_id: str) -> Any:
+    """Get tokenizer for model_id, skipping if it failed to load."""
+    tok = tokenizers[model_id]
+    if isinstance(tok, str):
+        pytest.skip(tok)
+    return tok
 
 
 def _make_model(client: SGLangClient, tokenizer: Any) -> SGLangModel:
@@ -116,7 +128,7 @@ class TestMessageSeparator:
     @pytest.mark.parametrize("model_id", MODEL_IDS, ids=MODEL_IDS)
     def test_separator(self, model_id: str, client: SGLangClient, tokenizers: dict[str, Any]) -> None:
         spec = _get_spec(model_id)
-        tokenizer = tokenizers[model_id]
+        tokenizer = _get_tokenizer(tokenizers, model_id)
         model = _make_model(client, tokenizer)
         assert model.message_separator == spec.separator, (
             f"{model_id}: expected separator {spec.separator!r}, got {model.message_separator!r}"
@@ -177,7 +189,7 @@ class TestTokenizePromptMessages:
         self, model_id: str, client: SGLangClient, tokenizers: dict[str, Any]
     ) -> None:
         """First call to tokenize_prompt_messages should match direct encode of apply_chat_template."""
-        tokenizer = tokenizers[model_id]
+        tokenizer = _get_tokenizer(tokenizers, model_id)
         model = _make_model(client, tokenizer)
 
         tokens = model.tokenize_prompt_messages(_FIRST_TURN, system_prompt=SYSTEM_PROMPT)
@@ -199,7 +211,7 @@ class TestTokenizePromptMessages:
         call picks up messages[message_count:] = [user2]. The produced text should
         match the tail of the full conversation text.
         """
-        tokenizer = tokenizers[model_id]
+        tokenizer = _get_tokenizer(tokenizers, model_id)
         model = _make_model(client, tokenizer)
 
         # Set up state as if first turn already happened
@@ -246,7 +258,7 @@ class TestTokenizePromptMessages:
         """
         if model_id == "MiniMaxAI/MiniMax-M2.5":
             pytest.xfail("MiniMax template rejects tool result without preceding assistant tool_call")
-        tokenizer = tokenizers[model_id]
+        tokenizer = _get_tokenizer(tokenizers, model_id)
         model = _make_model(client, tokenizer)
 
         # Set up state as if first turn (user + assistant with tool call) already happened
