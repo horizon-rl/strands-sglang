@@ -421,18 +421,8 @@ class TestSortToolResults:
         assert sorted_msgs == messages
 
 
-class TestValidateTokenizer:
-    """Tests for validate_tokenizer hook called during SGLangModel.__init__."""
-
-    def test_init_calls_validate_tokenizer(self, mock_tokenizer):
-        """SGLangModel.__init__ calls tool_parser.validate_tokenizer."""
-        from unittest.mock import MagicMock
-
-        client = SGLangClient(base_url="http://localhost:30000")
-        parser = MagicMock()
-        SGLangModel(client=client, tokenizer=mock_tokenizer, tool_parser=parser)
-
-        parser.validate_tokenizer.assert_called_once_with(mock_tokenizer)
+class TestStreamDefaults:
+    """Tests for stream() default behavior."""
 
     async def test_skip_special_tokens_defaults_to_false(self, mock_tokenizer):
         """stream() passes skip_special_tokens=False to client.generate by default."""
@@ -461,14 +451,3 @@ class TestValidateTokenizer:
 
         call_kwargs = client.generate.call_args
         assert call_kwargs.kwargs["sampling_params"]["skip_special_tokens"] is False
-
-    def test_deepseek_parser_rejects_unpatched_tokenizer(self, mock_tokenizer):
-        """DeepSeekV32ToolParser raises ValueError if encoding not attached."""
-        from strands_sglang.tool_parsers import DeepSeekV32ToolParser
-
-        mock_tokenizer._dsv32_encoding_attached = False
-        client = SGLangClient(base_url="http://localhost:30000")
-        parser = DeepSeekV32ToolParser()
-
-        with pytest.raises(ValueError, match="attach_dsv32_encoding"):
-            SGLangModel(client=client, tokenizer=mock_tokenizer, tool_parser=parser)

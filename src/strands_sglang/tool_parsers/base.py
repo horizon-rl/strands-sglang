@@ -21,10 +21,7 @@ import re
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
-
-if TYPE_CHECKING:
-    from transformers import PreTrainedTokenizerBase
+from typing import Any, ClassVar, TypeVar
 
 # Parser registry - populated by @register_tool_parser decorator
 TOOL_PARSER_REGISTRY: dict[str, type[ToolParser]] = {}
@@ -124,17 +121,6 @@ class ToolParser(ABC):
             rf"{re.escape(think_start_token)}.*?{re.escape(think_end_token)}",
             re.DOTALL,
         )
-
-    def validate_tokenizer(self, tokenizer: PreTrainedTokenizerBase) -> None:
-        """Validate that the tokenizer is compatible with this parser.
-
-        Called during `SGLangModel.__init__`. Override to check that the
-        tokenizer has required setup (e.g., custom encoding attached).
-
-        Args:
-            tokenizer: The tokenizer that will be used for chat template formatting.
-        """
-        _ = tokenizer  # Used by subclass overrides
 
     @abstractmethod
     def parse(self, text: str) -> list[ToolParseResult]:

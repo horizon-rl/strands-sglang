@@ -92,7 +92,6 @@ class SGLangModel(Model):
         self.tokenizer = tokenizer
         self.tool_parser = tool_parser or HermesToolParser()
         self.config = dict(config)
-        self.tool_parser.validate_tokenizer(self.tokenizer)
 
         # State tracking (this makes SGLangModel stateful)
         self.token_manager = TokenManager()
@@ -212,7 +211,7 @@ class SGLangModel(Model):
         return result
 
     def format_tool_specs(self, tool_specs: list[ToolSpec]) -> list[dict]:
-        """Format strands ToolSpecs to OpenAI format for chat templates."""
+        """Format strands ToolSpecs to HF chat template format."""
         return [
             {
                 "type": "function",
