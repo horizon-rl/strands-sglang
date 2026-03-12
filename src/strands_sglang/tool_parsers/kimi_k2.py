@@ -38,7 +38,8 @@ class KimiK2ToolParser(ToolParser):
         <|tool_call_argument_begin|>{"arg": "val"}<|tool_call_end|>
         <|tool_calls_section_end|>
 
-    Function name is extracted from `functions.<name>:<index>`.
+    The raw ID (e.g. `functions.func_name:0`) is preserved as `tool_call_id`
+    for correct round-trip with the chat template (`## Return of <id>`).
     Think blocks are excluded to avoid parsing draft tool calls from reasoning.
     """
 
@@ -54,6 +55,9 @@ class KimiK2ToolParser(ToolParser):
         re.DOTALL,
     )
 
+    # Matches "functions.<name>:<index>" with optional "functions." prefix
+    _ID_PATTERN = re.compile(r"^(?:functions\.)?(?P<name>[\w.\-]+?)(?::(?P<index>\d+))?$")
+
     @override
     def parse(self, text: str) -> list[ToolParseResult]:
         """Parse tool calls from model output."""
@@ -61,7 +65,6 @@ class KimiK2ToolParser(ToolParser):
         text = self.think_pattern.sub("", text)
 
         tool_calls: list[ToolParseResult] = []
-        call_index = 0
 
         for section_match in self.SECTION_PATTERN.finditer(text):
             section = section_match.group(1)
@@ -69,14 +72,13 @@ class KimiK2ToolParser(ToolParser):
             for call_match in self.CALL_PATTERN.finditer(section):
                 raw_id = call_match.group("tool_call_id")
                 raw_args = call_match.group("arguments").strip()
-                tool_call_id = f"call_{call_index:04d}"  # Sequential IDs for sortability
-                call_index += 1
 
                 # Extract function name from "functions.func_name:index"
-                # Use split(".", 1) and rsplit(":", 1) to handle dots in names
-                if "." in raw_id:
-                    name = raw_id.split(".", 1)[1].rsplit(":", 1)[0]
+                id_match = self._ID_PATTERN.match(raw_id)
+                if id_match:
+                    name = id_match.group("name")
                 else:
+                    logger.warning("Unexpected tool call ID format: %s", raw_id)
                     name = raw_id
 
                 try:
@@ -86,12 +88,12 @@ class KimiK2ToolParser(ToolParser):
                         arguments = {}
                 except json.JSONDecodeError:
                     logger.warning("Failed to parse arguments for %s: %s", name, raw_args[:200])
-                    tool_calls.append(ToolParseResult.from_parse_error(id=tool_call_id, raw=raw_args, name=name))
+                    tool_calls.append(ToolParseResult.from_parse_error(id=raw_id, raw=raw_args, name=name))
                     continue
 
                 tool_calls.append(
                     ToolParseResult(
-                        id=tool_call_id,
+                        id=raw_id,
                         name=name,
                         input=arguments,
                     )

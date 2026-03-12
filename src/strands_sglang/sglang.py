@@ -297,7 +297,7 @@ class SGLangModel(Model):
 
     @staticmethod
     def sort_tool_results(messages: Messages) -> Messages:
-        """Sort tool results by ID to match original call order (IDs are sequential: call_0000, call_0001, ...)."""
+        """Sort tool results by ID to match original call order."""
         return [
             {**msg, "content": sorted(msg["content"], key=lambda c: c["toolResult"]["toolUseId"])}
             if "toolResult" in msg["content"][0]

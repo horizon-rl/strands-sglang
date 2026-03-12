@@ -405,11 +405,11 @@ class TestKimiK2ToolParser:
         assert len(results) == 1
         assert results[0].name == "calculator"
         assert results[0].input == {"x": 1, "y": 2}
-        assert results[0].id == "call_0000"
+        assert results[0].id == "functions.calculator:0"
         assert results[0].is_error is False
 
-    def test_parse_multiple_tool_calls_with_sequential_ids(self, parser):
-        """Multiple calls get sequential IDs, including across sections."""
+    def test_parse_multiple_tool_calls_preserves_raw_ids(self, parser):
+        """Multiple calls preserve raw IDs for chat template round-trip."""
         text = (
             "<|tool_calls_section_begin|>"
             "<|tool_call_begin|>functions.tool_a:0"
@@ -430,7 +430,7 @@ class TestKimiK2ToolParser:
 
         assert len(results) == 3
         assert [r.name for r in results] == ["tool_a", "tool_b", "tool_c"]
-        assert [r.id for r in results] == ["call_0000", "call_0001", "call_0002"]
+        assert [r.id for r in results] == ["functions.tool_a:0", "functions.tool_b:0", "functions.tool_c:1"]
 
     def test_parse_no_tool_calls(self, parser):
         assert parser.parse("Just some regular text.") == []
@@ -440,9 +440,10 @@ class TestKimiK2ToolParser:
         "func_id, expected_name",
         [
             ("functions.my_tool:0", "my_tool"),  # standard dotted format
+            ("functions.web_search:0", "web_search"),  # underscored
             ("functions.web-search:0", "web-search"),  # hyphenated
             ("functions.module.sub_tool:0", "module.sub_tool"),  # nested dotted
-            ("calculator:0", "calculator:0"),  # no dot — raw ID as name
+            ("calculator:0", "calculator"),  # no functions. prefix — still extracts name
         ],
     )
     def test_function_name_extraction(self, parser, func_id, expected_name):
