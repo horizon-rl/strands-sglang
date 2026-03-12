@@ -35,7 +35,9 @@ class HermesToolParser(ToolParser):
 
         <tool_call>{"name": "func", "arguments": {"arg": "value"}}</tool_call>
 
-    Used by Qwen2.5/Qwen3 and NousResearch/Hermes models.
+    Notes:
+        - Used by Qwen2.5/Qwen3 and NousResearch/Hermes models.
+        - Think blocks are excluded to avoid parsing draft tool calls from reasoning.
     """
 
     _NAME_PATTERN = re.compile(r'"name"\s*:\s*"([^"]+)"')

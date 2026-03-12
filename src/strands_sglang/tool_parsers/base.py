@@ -66,7 +66,7 @@ class ToolParser(ABC):
     """Base class for tool call parsers.
 
     Notes:
-        - Subclasses implement `parse` to extract tool calls from model output.
+        - Subclasses implement `parse` to extract tool calls from model output. Requires:
             - `<think>` blocks should be excluded to avoid parsing draft tool calls from reasoning.
             - Best-effort extracted tool name is used for error handling.
             - Arguments are passed as-is; Strands validates arguments downstream.

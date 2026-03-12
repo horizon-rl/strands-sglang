@@ -59,7 +59,8 @@ def get_client_from_slime_args(
 ) -> SGLangClient:
     """Get a shared (cached) `SGLangClient` from `slime`'s training args.
 
-    Matches slime's `init_http_client` formula for connection pooling.
+    Notes:
+        Matches slime's `init_http_client` formula for connection pooling.
     """
     base_url = f"http://{args.sglang_router_ip}:{args.sglang_router_port}"
     max_connections = int(args.sglang_server_concurrency * args.rollout_num_gpus // args.rollout_num_gpus_per_engine)

@@ -36,9 +36,10 @@ class GLMToolParser(ToolParser):
 
         <tool_call>function_name<arg_key>key1</arg_key><arg_value>value1</arg_value></tool_call>
 
-    Function name precedes the first `<arg_key>` tag (with or without a newline).
-    Values are JSON-decoded when possible, otherwise kept as strings.
-    Think blocks are excluded to avoid parsing draft tool calls from reasoning.
+    Notes:
+        - Function name precedes the first `<arg_key>` tag (with or without a newline).
+        - Values are JSON-decoded when possible, otherwise kept as strings.
+        - Think blocks are excluded to avoid parsing draft tool calls from reasoning.
     """
 
     ARG_PATTERN = re.compile(

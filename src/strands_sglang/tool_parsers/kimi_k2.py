@@ -38,9 +38,10 @@ class KimiK2ToolParser(ToolParser):
         <|tool_call_argument_begin|>{"arg": "val"}<|tool_call_end|>
         <|tool_calls_section_end|>
 
-    The raw ID (e.g. `functions.func_name:0`) is preserved as `tool_call_id`
-    for correct round-trip with the chat template (`## Return of <id>`).
-    Think blocks are excluded to avoid parsing draft tool calls from reasoning.
+    Notes:
+        - The raw ID (e.g. `functions.func_name:0`) is preserved as `tool_call_id`
+        for correct round-trip with the chat template (`## Return of <id>`).
+        - Think blocks are excluded to avoid parsing draft tool calls from reasoning.
     """
 
     SECTION_PATTERN = re.compile(

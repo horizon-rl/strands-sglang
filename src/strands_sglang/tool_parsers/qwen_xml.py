@@ -39,8 +39,9 @@ class QwenXMLToolParser(ToolParser):
         </function>
         </tool_call>
 
-    Function and parameter names are embedded in tag attributes.
-    Think blocks are excluded to avoid parsing draft tool calls from reasoning.
+    Notes:
+        - Function and parameter names are embedded in tag attributes.
+        - Think blocks are excluded to avoid parsing draft tool calls from reasoning.
     """
 
     _FUNCTION_PATTERN = re.compile(r"<function=([^>]+)>(.*?)</function>", re.DOTALL)

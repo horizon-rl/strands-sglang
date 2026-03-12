@@ -86,7 +86,7 @@ class SGLangModel(Model):
             client: `SGLangClient` for HTTP communication with the SGLang server.
             tokenizer: HuggingFace tokenizer for chat template and tokenization.
             tool_parser: `ToolParser` for tool calls (default: `HermesToolParser`).
-            **config: Additional SGLang generation configuration.
+            **config: Additional SGLang generation configuration (see `SGLangConfig`).
         """
         self.client = client
         self.tokenizer = tokenizer
