@@ -92,7 +92,7 @@ async def main():
     base_url = os.environ.get("SGLANG_BASE_URL", "http://localhost:30000")
     client = SGLangClient(base_url=base_url)
 
-    model_info = await client.get_model_info()
+    model_info = await client.model_info()
     model_path = os.environ.get("MODEL_PATH", model_info["model_path"])
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 

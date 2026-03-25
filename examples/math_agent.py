@@ -47,7 +47,7 @@ async def main():
 
     # Create SGLangModel with token-level trajectory tracking support
     client = SGLangClient(base_url=os.environ.get("SGLANG_BASE_URL", "http://localhost:30000"))
-    model_info = await client.get_model_info()
+    model_info = await client.model_info()
     tokenizer = AutoTokenizer.from_pretrained(model_info["model_path"])
     tool_parser = QwenXMLToolParser() if model_info["model_path"].startswith("Qwen/Qwen3.5") else HermesToolParser()
     model = SGLangModel(
