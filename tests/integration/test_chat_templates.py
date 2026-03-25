@@ -104,10 +104,9 @@ def _get_tokenizer(tokenizers: dict[str, Any], model_id: str) -> Any:
 
 
 def _make_model(client: SGLangClient, tokenizer: Any) -> SGLangModel:
-    """Create an SGLangModel with real tokenizer, overriding is_multimodal."""
-    model = SGLangModel(client=client, tokenizer=tokenizer)
-    model.__dict__["is_multimodal"] = False
-    return model
+    """Create an SGLangModel with real tokenizer."""
+    client._is_multimodal = False
+    return SGLangModel(client=client, tokenizer=tokenizer)
 
 
 # ---------------------------------------------------------------------------

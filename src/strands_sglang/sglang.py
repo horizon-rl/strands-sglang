@@ -37,7 +37,7 @@ from strands.types.exceptions import (
 )
 from strands.types.streaming import StopReason, StreamEvent
 from strands.types.tools import ToolChoice, ToolResultContent, ToolSpec
-from transformers import PretrainedConfig, PreTrainedTokenizerBase
+from transformers import PreTrainedTokenizerBase
 from typing_extensions import Unpack, override
 
 from .client import SGLangClient
@@ -111,15 +111,6 @@ class SGLangModel(Model):
         self.message_count = 0
         self.tool_parse_errors = {}
         self.image_data = []
-
-    @cached_property
-    def is_multimodal(self) -> bool:
-        """Auto-detect multimodal support from the model's HuggingFace config.
-
-        Mirrors SGLang's logic: `hasattr(hf_config, "vision_config")`.
-        """
-        hf_config = PretrainedConfig.from_pretrained(self.tokenizer.name_or_path)
-        return hasattr(hf_config, "vision_config")
 
     # -------------------------------------------------------------------------
     # Model interface implementation
@@ -253,6 +244,7 @@ class SGLangModel(Model):
         messages: Messages,
         system_prompt: str | None,
         tool_specs: list[ToolSpec] | None = None,
+        is_multimodal: bool = False,
     ) -> list[int]:
         """Tokenize prompt messages for the next generation call.
 
@@ -264,7 +256,7 @@ class SGLangModel(Model):
 
         # TODO: add support for other modalities (e.g. audio, video, etc.)
         def update_multimodal_data(hf_messages: list[dict[str, Any]]) -> None:
-            if not self.is_multimodal:
+            if not is_multimodal:
                 return
             for msg in hf_messages:
                 for part in msg["content"]:
@@ -274,7 +266,7 @@ class SGLangModel(Model):
 
         # First call: full prompt with tools
         if self.message_count == 0:
-            hf_messages = self.format_messages(messages, system_prompt, is_multimodal=self.is_multimodal)
+            hf_messages = self.format_messages(messages, system_prompt, is_multimodal=is_multimodal)
             update_multimodal_data(hf_messages)
             tools = self.format_tool_specs(tool_specs) if tool_specs else None
             prompt = cast(
@@ -288,14 +280,14 @@ class SGLangModel(Model):
         # Incremental: fake prefix subtraction with message_separator bridge
         if len(messages) > self.message_count:
             new_hf_messages = self.format_messages(
-                self.sort_tool_results(messages[self.message_count :]), is_multimodal=self.is_multimodal
+                self.sort_tool_results(messages[self.message_count :]), is_multimodal=is_multimodal
             )
             update_multimodal_data(new_hf_messages)
             fake_messages = [
                 {"role": "system", "content": [{"text": "FAKE SYSTEM PROMPT"}]},
                 {"role": "user", "content": [{"text": "FAKE USER MESSAGE"}]},
             ]
-            fake_hf_messages = self.format_messages(cast(Messages, fake_messages), is_multimodal=self.is_multimodal)
+            fake_hf_messages = self.format_messages(cast(Messages, fake_messages), is_multimodal=is_multimodal)
             full_prompt = cast(
                 str,
                 self.tokenizer.apply_chat_template(
@@ -335,7 +327,13 @@ class SGLangModel(Model):
         sampling_params: dict[str, Any] = dict(config.get("sampling_params") or {})
         sampling_params.setdefault("skip_special_tokens", False)
         return_logprob = config.get("return_logprob", True)
-        new_input_ids = self.tokenize_prompt_messages(messages, system_prompt, tool_specs=tool_specs)
+        is_multimodal = await self.client.is_multimodal()
+        new_input_ids = self.tokenize_prompt_messages(
+            messages=messages,
+            system_prompt=system_prompt,
+            tool_specs=tool_specs,
+            is_multimodal=is_multimodal,
+        )
         # Tracking token IDs in token_manager to ensure the token-in feature
         input_ids = self.token_manager.token_ids + new_input_ids
 
@@ -446,7 +444,8 @@ class SGLangModel(Model):
         json_schema = json.dumps(output_model.model_json_schema())
 
         # Format and tokenize prompt (no tools for structured output)
-        hf_messages = self.format_messages(prompt, system_prompt, is_multimodal=self.is_multimodal)
+        is_multimodal = await self.client.is_multimodal()
+        hf_messages = self.format_messages(prompt, system_prompt, is_multimodal=is_multimodal)
         formatted_prompt = cast(
             str,
             self.tokenizer.apply_chat_template(hf_messages, add_generation_prompt=True, **self._chat_template_kwargs),

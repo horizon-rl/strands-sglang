@@ -37,8 +37,8 @@ def mock_tokenizer():
 def model(mock_tokenizer):
     """Create an SGLangModel with mock tokenizer."""
     client = SGLangClient(base_url="http://localhost:30000")
+    client._is_multimodal = False
     model = SGLangModel(client=client, tokenizer=mock_tokenizer)
-    model.__dict__["is_multimodal"] = False  # override cached_property (mock has no real config)
     model.__dict__["message_separator"] = ""  # override cached_property (mock has no real template)
     return model
 
@@ -212,6 +212,7 @@ class TestStreamDefaults:
         from unittest.mock import AsyncMock
 
         client = SGLangClient(base_url="http://localhost:30000")
+        client._is_multimodal = False
         client.generate = AsyncMock(
             return_value={
                 "text": "hello",
@@ -226,7 +227,6 @@ class TestStreamDefaults:
             }
         )
         model = SGLangModel(client=client, tokenizer=mock_tokenizer)
-        model.__dict__["is_multimodal"] = False
 
         messages = [{"role": "user", "content": [{"text": "hi"}]}]
         async for _ in model.stream(messages):

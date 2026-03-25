@@ -105,6 +105,7 @@ class SGLangClient:
         self._timeout = timeout
         self._connect_timeout = connect_timeout
         self._session: aiohttp.ClientSession | None = None
+        self._is_multimodal: bool | None = None
 
         logger.info(
             "SGLangClient initialized: base_url=%s, max_connections=%s, timeout=%s, max_retries=%s",
@@ -281,3 +282,15 @@ class SGLangClient:
                 return await resp.json(content_type=None)
         except Exception:
             return None
+
+    async def is_multimodal(self) -> bool:
+        """Check if the server's model supports multimodal (image) input.
+
+        Queries `/model_info` for the `has_image_understanding` field. Result is cached
+        after the first successful query.
+        """
+        if self._is_multimodal is not None:
+            return self._is_multimodal
+        info = await self.model_info()
+        self._is_multimodal = bool(info.get("has_image_understanding", False)) if info else False
+        return self._is_multimodal

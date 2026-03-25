@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import base64
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -62,8 +62,8 @@ def client():
 @pytest.fixture
 def vlm_model(client, mock_tokenizer):
     """SGLangModel in VLM mode."""
+    client._is_multimodal = True
     model = SGLangModel(client=client, tokenizer=mock_tokenizer)
-    model.__dict__["is_multimodal"] = True  # override cached_property
     model.__dict__["message_separator"] = ""  # override cached_property (mock has no real template)
     return model
 
@@ -71,8 +71,8 @@ def vlm_model(client, mock_tokenizer):
 @pytest.fixture
 def text_model(client, mock_tokenizer):
     """SGLangModel in text-only mode."""
+    client._is_multimodal = False
     model = SGLangModel(client=client, tokenizer=mock_tokenizer)
-    model.__dict__["is_multimodal"] = False  # override cached_property
     model.__dict__["message_separator"] = ""  # override cached_property (mock has no real template)
     return model
 
@@ -83,20 +83,37 @@ def text_model(client, mock_tokenizer):
 
 
 class TestVLMAutoDetect:
-    def test_with_vision_config(self, client, mock_tokenizer):
-        """Auto-detects multimodal from HuggingFace config's vision_config."""
-        mock_config = MagicMock()
-        mock_config.vision_config = {}  # has vision_config → multimodal
-        with patch("transformers.PretrainedConfig.from_pretrained", return_value=mock_config):
-            model = SGLangModel(client=client, tokenizer=mock_tokenizer)
-            assert model.is_multimodal is True
+    @pytest.mark.asyncio
+    async def test_has_image_understanding_true(self, client):
+        """Detects multimodal from server's has_image_understanding field."""
+        client.model_info = AsyncMock(return_value={"has_image_understanding": True})
+        assert await client.is_multimodal() is True
 
-    def test_without_vision_config(self, client, mock_tokenizer):
-        """Text-only models have no vision_config."""
-        mock_config = MagicMock(spec=[])  # no attributes → no vision_config
-        with patch("transformers.PretrainedConfig.from_pretrained", return_value=mock_config):
-            model = SGLangModel(client=client, tokenizer=mock_tokenizer)
-            assert model.is_multimodal is False
+    @pytest.mark.asyncio
+    async def test_has_image_understanding_false(self, client):
+        """Text-only models have has_image_understanding=False."""
+        client.model_info = AsyncMock(return_value={"has_image_understanding": False})
+        assert await client.is_multimodal() is False
+
+    @pytest.mark.asyncio
+    async def test_missing_field_defaults_false(self, client):
+        """Older SGLang servers without has_image_understanding default to False."""
+        client.model_info = AsyncMock(return_value={"model_path": "some/model"})
+        assert await client.is_multimodal() is False
+
+    @pytest.mark.asyncio
+    async def test_server_unreachable_defaults_false(self, client):
+        """When server is unreachable, defaults to False."""
+        client.model_info = AsyncMock(return_value=None)
+        assert await client.is_multimodal() is False
+
+    @pytest.mark.asyncio
+    async def test_result_is_cached(self, client):
+        """Second call returns cached result without querying server again."""
+        client.model_info = AsyncMock(return_value={"has_image_understanding": True})
+        await client.is_multimodal()
+        await client.is_multimodal()
+        client.model_info.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +195,7 @@ class TestImageAccumulation:
         """image_data grows across multiple tokenize_prompt_messages calls."""
         # First turn: one image
         messages1 = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
-        vlm_model.tokenize_prompt_messages(messages1, system_prompt=None)
+        vlm_model.tokenize_prompt_messages(messages1, system_prompt=None, is_multimodal=True)
         assert len(vlm_model.image_data) == 1
 
         # Second turn: simulate assistant response + tool result with screenshot
@@ -206,12 +223,12 @@ class TestImageAccumulation:
                 ],
             },
         ]
-        vlm_model.tokenize_prompt_messages(messages2, system_prompt=None)
+        vlm_model.tokenize_prompt_messages(messages2, system_prompt=None, is_multimodal=True)
         assert len(vlm_model.image_data) == 2  # 1 from first + 1 from second (tool result image)
 
     def test_reset_clears_accumulated_images(self, vlm_model, mock_tokenizer):
         messages = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
-        vlm_model.tokenize_prompt_messages(messages, system_prompt=None)
+        vlm_model.tokenize_prompt_messages(messages, system_prompt=None, is_multimodal=True)
         assert len(vlm_model.image_data) > 0
 
         vlm_model.reset()
@@ -228,6 +245,7 @@ class TestStreamImageData:
     async def test_image_data_passed_to_client(self, vlm_model, mock_tokenizer):
         """When message contains an image, image_data is forwarded to client.generate."""
         with patch.object(vlm_model.client, "generate", new_callable=_async_mock_generate) as mock_gen:
+            vlm_model.client.is_multimodal = AsyncMock(return_value=True)
             async for _ in vlm_model.stream(
                 messages=[{"role": "user", "content": [{"text": "describe"}, _image_block()]}],
             ):
@@ -238,6 +256,7 @@ class TestStreamImageData:
     async def test_no_image_data_passes_none(self, text_model, mock_tokenizer):
         """When image_data is empty, image_data=None is passed."""
         with patch.object(text_model.client, "generate", new_callable=_async_mock_generate) as mock_gen:
+            text_model.client.is_multimodal = AsyncMock(return_value=False)
             async for _ in text_model.stream(
                 messages=[{"role": "user", "content": [{"text": "hello"}]}],
             ):
