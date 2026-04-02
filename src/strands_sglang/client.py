@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any
 
@@ -191,8 +192,21 @@ class SGLangClient:
     async def generate(self, input_ids: list[int], **kwargs: Any) -> dict[str, Any]:
         """Call SGLang `/generate` endpoint with retry.
 
+        JSON parsing runs in a thread pool to avoid blocking the asyncio event loop,
+        which is critical when responses contain large payloads (e.g., ``routed_experts``).
+
         Notes:
             Non-retryable: 401/403/404 and context-length 400s. All other errors are retried.
+        """
+        raw = await self.generate_raw(input_ids, **kwargs)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, json.loads, raw)
+
+    async def generate_raw(self, input_ids: list[int], **kwargs: Any) -> bytes:
+        """Call SGLang `/generate` endpoint with retry, returning raw response bytes.
+
+        Use this instead of `generate()` when you need control over JSON parsing
+        (e.g., to strip large fields like ``routed_experts`` before parsing).
         """
         payload: dict[str, Any] = {
             "input_ids": input_ids,
@@ -210,12 +224,10 @@ class SGLangClient:
                         body = await resp.text()
                         raise self._classify_http_error(resp.status, body)
 
-                    # Success path: parse JSON directly
                     try:
-                        return await resp.json(content_type=None)
+                        return await resp.read()
                     except Exception as e:
-                        # Non-JSON response — treat as retryable error
-                        raise SGLangDecodingError(f"Invalid JSON response: {e}") from e
+                        raise SGLangDecodingError(f"Failed to read response: {e}") from e
 
             except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as e:
                 last_error = SGLangConnectionError(str(e))

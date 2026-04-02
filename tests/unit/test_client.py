@@ -15,6 +15,7 @@
 """Unit tests for SGLangClient (mocked, no server required)."""
 
 import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -242,8 +243,10 @@ def _mock_response(status: int, body: str = "", json_data: dict | None = None):
     mock_resp.text = AsyncMock(return_value=body)
     if json_data is not None:
         mock_resp.json = AsyncMock(return_value=json_data)
+        mock_resp.read = AsyncMock(return_value=json.dumps(json_data).encode())
     else:
         mock_resp.json = AsyncMock(side_effect=Exception("Not JSON"))
+        mock_resp.read = AsyncMock(side_effect=Exception("Not JSON"))
     mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
     mock_resp.__aexit__ = AsyncMock(return_value=None)
     return mock_resp
@@ -387,6 +390,42 @@ class TestGenerateErrors:
 
         # Should only be called once — no retries
         assert mock_session.post.call_count == 1
+
+
+class TestGenerateRaw:
+    """Tests for generate_raw() returning raw bytes."""
+
+    async def test_returns_raw_bytes(self):
+        """generate_raw returns raw response bytes without parsing."""
+        raw_payload = b'{"text":"hello","output_ids":[1,2],"meta_info":{}}'
+        resp = _mock_response(200)
+        resp.read = AsyncMock(return_value=raw_payload)
+        client = _client_with_mock_session(resp)
+
+        result = await client.generate_raw(input_ids=[1, 2, 3])
+
+        assert result == raw_payload
+        assert isinstance(result, bytes)
+
+    async def test_raises_decoding_error_on_read_failure(self):
+        """generate_raw raises SGLangDecodingError when resp.read() fails."""
+        resp = _mock_response(200)
+        resp.read = AsyncMock(side_effect=Exception("read broken"))
+        client = _client_with_mock_session(resp)
+
+        with pytest.raises(SGLangDecodingError, match="Failed to read response"):
+            await client.generate_raw(input_ids=[1, 2, 3])
+
+    async def test_generate_delegates_to_generate_raw(self):
+        """generate() calls generate_raw() internally and parses the result."""
+        raw_payload = b'{"text":"hello","output_ids":[1,2],"meta_info":{}}'
+        resp = _mock_response(200)
+        resp.read = AsyncMock(return_value=raw_payload)
+        client = _client_with_mock_session(resp)
+
+        result = await client.generate(input_ids=[1, 2, 3])
+
+        assert result == {"text": "hello", "output_ids": [1, 2], "meta_info": {}}
 
 
 class TestExceptionHierarchy:

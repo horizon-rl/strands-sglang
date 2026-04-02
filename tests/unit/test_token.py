@@ -14,6 +14,7 @@
 
 """Unit tests for token module."""
 
+import numpy as np
 import pytest
 
 from strands_sglang import Token, TokenManager
@@ -188,6 +189,57 @@ class TestTokenManagerMultipleSegments:
         manager.add_prompt([6])
 
         assert manager.segment_info == [(False, 3), (True, 2), (False, 1)]
+
+
+class TestTokenManagerRoutedExperts:
+    """Tests for routed_experts support."""
+
+    def test_routed_experts_default_none(self):
+        """routed_experts is None by default."""
+        manager = TokenManager()
+        assert manager.routed_experts is None
+
+    def test_add_response_with_routed_experts(self):
+        """add_response stores routed_experts on the manager."""
+        manager = TokenManager()
+        manager.add_prompt([1, 2])
+        # total_tokens=4 → (3, num_layers=2, topk=2) = 12 elements
+        experts = np.arange(12, dtype=np.int32)
+        manager.add_response([3, 4], routed_experts=experts)
+
+        np.testing.assert_array_equal(manager.routed_experts, experts)
+
+    def test_add_response_without_routed_experts_leaves_none(self):
+        """add_response without routed_experts keeps it None."""
+        manager = TokenManager()
+        manager.add_prompt([1])
+        manager.add_response([2, 3])
+
+        assert manager.routed_experts is None
+
+    def test_routed_experts_overwritten_by_later_call(self):
+        """Later add_response with routed_experts overwrites the previous value."""
+        manager = TokenManager()
+        manager.add_prompt([1])
+        # total_tokens=2 → (1, num_layers=2, topk=2) = 4 elements
+        manager.add_response([2], routed_experts=np.arange(4, dtype=np.int32))
+        manager.add_prompt([3])
+        # total_tokens=4 → (3, num_layers=2, topk=2) = 12 elements
+        experts_second = np.arange(12, dtype=np.int32)
+        manager.add_response([4], routed_experts=experts_second)
+
+        np.testing.assert_array_equal(manager.routed_experts, experts_second)
+
+    def test_reset_clears_routed_experts(self):
+        """reset clears routed_experts back to None."""
+        manager = TokenManager()
+        manager.add_prompt([1])
+        # total_tokens=2 → (1, num_layers=2, topk=2) = 4 elements
+        manager.add_response([2], routed_experts=np.arange(4, dtype=np.int32))
+        assert manager.routed_experts is not None
+
+        manager.reset()
+        assert manager.routed_experts is None
 
 
 class TestTokenManagerReset:

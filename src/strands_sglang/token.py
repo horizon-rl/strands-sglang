@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,10 +56,12 @@ class TokenManager:
     def __init__(self) -> None:
         """Create a TokenManager."""
         self._segments: list[list[Token]] = []
+        self._routed_experts: Any = None
 
     def reset(self) -> None:
         """Reset token accumulation for a new episode."""
         self._segments = []
+        self._routed_experts = None
 
     def add_prompt(self, token_ids: list[int], logprobs: list[float] | None = None) -> None:
         """Add a prompt segment (system messages, user input, tool results)."""
@@ -77,8 +80,22 @@ class TokenManager:
         ]
         self._segments.append(tokens)
 
-    def add_response(self, token_ids: list[int], logprobs: list[float] | None = None) -> None:
-        """Add a response segment (model output)."""
+    def add_response(
+        self,
+        token_ids: list[int],
+        logprobs: list[float] | None = None,
+        routed_experts: Any = None,
+    ) -> None:
+        """Add a response segment (model output).
+
+        Args:
+            token_ids: Token IDs from the model response.
+            logprobs: Log probabilities for each token.
+            routed_experts: Flat int32 numpy array of MoE routed expert indices,
+                decoded from SGLang's base64 response. When used with
+                ``routed_experts_start_len``, this contains only the new chunk;
+                chunks are concatenated automatically.
+        """
         if not token_ids:
             return
         if not self._segments:
@@ -95,6 +112,9 @@ class TokenManager:
             for i, tid in enumerate(token_ids)
         ]
         self._segments.append(tokens)
+
+        if routed_experts is not None:
+            self._routed_experts = routed_experts
 
     @property
     def tokens(self) -> list[Token]:
@@ -134,6 +154,16 @@ class TokenManager:
     def segments(self) -> list[list[Token]]:
         """Get tokens organized by segment."""
         return self._segments
+
+    @property
+    def routed_experts(self) -> Any:
+        """Get the routed experts buffer from the last ``/generate`` call.
+
+        Returns:
+            Flat int32 numpy array covering the full sequence, or ``None``.
+            Reshape with ``(total_tokens - 1, num_layers, moe_router_topk)``.
+        """
+        return self._routed_experts
 
     @property
     def segment_info(self) -> list[tuple[bool, int]]:

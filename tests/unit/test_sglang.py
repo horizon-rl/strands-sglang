@@ -14,12 +14,15 @@
 
 """Unit tests for SGLangModel helper methods (no API calls needed)."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
+import numpy as np
+import pybase64
 import pytest
 
 from strands_sglang import SGLangModel
 from strands_sglang.client import SGLangClient
+from strands_sglang.sglang import _decode_routed_experts
 
 
 @pytest.fixture
@@ -204,29 +207,38 @@ class TestSortToolResults:
         assert sorted_msgs[1]["content"][1]["toolResult"]["toolUseId"] == "call_0001"
 
 
+def _make_generate_response(**overrides):
+    """Create a standard mock generate response with optional overrides."""
+    base = {
+        "text": "hello",
+        "output_ids": [1, 2],
+        "meta_info": {
+            "prompt_tokens": 5,
+            "completion_tokens": 2,
+            "cached_tokens": 0,
+            "finish_reason": {"type": "stop"},
+            "e2e_latency": 0.1,
+        },
+    }
+    base.update(overrides)
+    return base
+
+
+def _make_model_with_mock_client(mock_tokenizer, generate_return=None, config=None):
+    """Create an SGLangModel with a mocked client.generate."""
+    client = SGLangClient(base_url="http://localhost:30000")
+    client._is_multimodal = False
+    client.generate = AsyncMock(return_value=generate_return or _make_generate_response())
+    model = SGLangModel(client=client, tokenizer=mock_tokenizer, **(config or {}))
+    return model, client
+
+
 class TestStreamDefaults:
     """Tests for stream() default behavior."""
 
     async def test_skip_special_tokens_defaults_to_false(self, mock_tokenizer):
         """stream() passes skip_special_tokens=False to client.generate by default."""
-        from unittest.mock import AsyncMock
-
-        client = SGLangClient(base_url="http://localhost:30000")
-        client._is_multimodal = False
-        client.generate = AsyncMock(
-            return_value={
-                "text": "hello",
-                "output_ids": [1, 2],
-                "meta_info": {
-                    "prompt_tokens": 5,
-                    "completion_tokens": 2,
-                    "cached_tokens": 0,
-                    "finish_reason": {"type": "stop"},
-                    "e2e_latency": 0.1,
-                },
-            }
-        )
-        model = SGLangModel(client=client, tokenizer=mock_tokenizer)
+        model, client = _make_model_with_mock_client(mock_tokenizer)
 
         messages = [{"role": "user", "content": [{"text": "hi"}]}]
         async for _ in model.stream(messages):
@@ -234,3 +246,86 @@ class TestStreamDefaults:
 
         call_kwargs = client.generate.call_args
         assert call_kwargs.kwargs["sampling_params"]["skip_special_tokens"] is False
+
+
+class TestStreamRoutedExperts:
+    """Tests for return_routed_experts config in stream()."""
+
+    async def test_return_routed_experts_passed_to_client(self, mock_tokenizer):
+        """stream() passes return_routed_experts to client.generate when configured."""
+        model, client = _make_model_with_mock_client(
+            mock_tokenizer,
+            config={"return_routed_experts": True},
+        )
+
+        messages = [{"role": "user", "content": [{"text": "hi"}]}]
+        async for _ in model.stream(messages):
+            pass
+
+        call_kwargs = client.generate.call_args
+        assert call_kwargs.kwargs["return_routed_experts"] is True
+
+    async def test_return_routed_experts_defaults_to_false(self, mock_tokenizer):
+        """stream() defaults return_routed_experts to False."""
+        model, client = _make_model_with_mock_client(mock_tokenizer)
+
+        messages = [{"role": "user", "content": [{"text": "hi"}]}]
+        async for _ in model.stream(messages):
+            pass
+
+        call_kwargs = client.generate.call_args
+        assert call_kwargs.kwargs["return_routed_experts"] is False
+
+    async def test_routed_experts_decoded_and_stored(self, mock_tokenizer):
+        """stream() decodes routed_experts from meta_info and stores on token_manager."""
+        # 5 prompt tokens + 2 output tokens = 7 total → (6, num_layers=3, topk=2) = 36 elements
+        experts_array = np.arange(36, dtype=np.int32)
+        encoded = pybase64.b64encode(experts_array.tobytes()).decode("ascii")
+
+        response = _make_generate_response()
+        response["meta_info"]["routed_experts"] = encoded
+
+        model, client = _make_model_with_mock_client(
+            mock_tokenizer,
+            generate_return=response,
+            config={"return_routed_experts": True},
+        )
+
+        messages = [{"role": "user", "content": [{"text": "hi"}]}]
+        async for _ in model.stream(messages):
+            pass
+
+        np.testing.assert_array_equal(model.token_manager.routed_experts, experts_array)
+
+    async def test_routed_experts_none_when_not_in_response(self, mock_tokenizer):
+        """token_manager.routed_experts stays None when meta_info has no routed_experts."""
+        model, client = _make_model_with_mock_client(
+            mock_tokenizer,
+            config={"return_routed_experts": True},
+        )
+
+        messages = [{"role": "user", "content": [{"text": "hi"}]}]
+        async for _ in model.stream(messages):
+            pass
+
+        assert model.token_manager.routed_experts is None
+
+
+class TestDecodeRoutedExperts:
+    """Tests for _decode_routed_experts helper."""
+
+    def test_returns_none_when_key_missing(self):
+        """Returns None when meta_info has no routed_experts key."""
+        assert _decode_routed_experts({}) is None
+        assert _decode_routed_experts({"other": "data"}) is None
+
+    def test_decodes_base64_to_numpy(self):
+        """Decodes base64-encoded int32 array correctly."""
+        # (total_tokens-1=2, num_layers=3, topk=2) = 12 elements
+        expected = np.arange(12, dtype=np.int32)
+        encoded = pybase64.b64encode(expected.tobytes()).decode("ascii")
+
+        result = _decode_routed_experts({"routed_experts": encoded})
+
+        np.testing.assert_array_equal(result, expected)
+        assert result.dtype == np.int32
