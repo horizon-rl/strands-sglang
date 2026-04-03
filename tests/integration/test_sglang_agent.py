@@ -104,7 +104,19 @@ async def test_sequential_tool_chain(model):
     try:
         await agent.invoke_async(problem)
     except MaxTokensReachedException:
-        pass  # Still verify trajectory
+        # Ensure the agent made some progress (tokens / tool calls) before hitting the limit.
+        tm = model.token_manager
+        assert len(tm) > 0, "MaxTokensReachedException was raised before any tokens were generated"
+        tool_uses_on_exception = [
+            content["toolUse"]
+            for msg in agent.messages
+            if msg.get("role") == "assistant"
+            for content in msg.get("content", [])
+            if "toolUse" in content
+        ]
+        assert (
+            len(tool_uses_on_exception) > 0
+        ), "MaxTokensReachedException was raised before any tool calls were made"
 
     # Should have used the tool multiple times (at least revenue + feed + savings)
     tool_uses = [
