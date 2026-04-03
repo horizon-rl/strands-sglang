@@ -110,14 +110,14 @@ async def model(tokenizer, sglang_base_url, tool_parser_name):
 async def vlm_model(tokenizer, sglang_base_url, tool_parser_name):
     """Create fresh SGLangModel for VLM tests (multimodal auto-detected)."""
     client = SGLangClient(base_url=sglang_base_url)
+    if not await client.is_multimodal():
+        pytest.skip("Model does not support image understanding")
     model = SGLangModel(
         client=client,
         tokenizer=tokenizer,
         tool_parser=get_tool_parser(tool_parser_name),
         sampling_params={"max_new_tokens": 32768},
     )
-    if not await client.is_multimodal():
-        pytest.skip("Model does not support image understanding")
     yield model
     await client.close()
 
