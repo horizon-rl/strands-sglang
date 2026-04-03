@@ -218,7 +218,10 @@ def hello():
         results = parser.parse(text)
 
         assert results[0].name == "write_file"
-        assert "def hello():" in results[0].input["content"]
+
+        expected_content = """def hello():
+    print("Hello, World!")"""
+        assert results[0].input["content"] == expected_content
 
     def test_parse_missing_function_tag(self, parser):
         text = """<tool_call>
