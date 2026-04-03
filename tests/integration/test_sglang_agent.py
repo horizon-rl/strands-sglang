@@ -194,7 +194,7 @@ async def test_multi_turn(model):
     assert segments_t2 > segments_t1, f"Segments should grow: {segments_t1} -> {segments_t2}"
 
     # Previous token masks preserved (first N tokens unchanged)
-    assert model.token_manager.loss_mask[:tokens_t1] == mask_t1, "Previous loss_mask must be preserved"
+    assert all(model.token_manager.loss_mask[:tokens_t1] == mask_t1), "Previous loss_mask must be preserved"
 
     assert_trajectory_valid(model, min_response_segments=2)
 
