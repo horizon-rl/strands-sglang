@@ -131,13 +131,6 @@ class SGLangClient:
             await self._session.close()
             self._session = None
 
-    def __del__(self) -> None:
-        """Sync cleanup to prevent aiohttp 'Unclosed client session' warnings at shutdown."""
-        if self._session is not None and not self._session.closed:
-            if self._session.connector is not None and not self._session.connector.closed:
-                self._session.connector._close()
-            self._session._connector = None
-
     async def __aenter__(self) -> SGLangClient:
         """Enter async context manager."""
         return self
