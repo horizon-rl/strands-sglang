@@ -46,9 +46,9 @@ class ToolParseResult:
     raw: str | None = None
 
     @classmethod
-    def from_parse_error(cls, id: str, raw: str, name: str | None = None) -> ToolParseResult:
+    def from_parse_error(cls, call_id: str, raw: str, name: str | None = None) -> ToolParseResult:
         """Create an error result with unparsable `raw` content for model self-correction."""
-        return cls(id=id, name=name if name is not None else cls.UNKNOWN_NAME, input={}, raw=raw)
+        return cls(id=call_id, name=name if name is not None else cls.UNKNOWN_NAME, input={}, raw=raw)
 
     @property
     def is_error(self) -> bool:
