@@ -106,7 +106,7 @@ class ToolParser(ABC):
     @abstractmethod
     def parse(self, text: str) -> list[ToolParseResult]:
         """Parse tool calls from model output text."""
-        ...
+        pass
 
 
 def register_tool_parser(name: str) -> Callable[[type[T]], type[T]]:
