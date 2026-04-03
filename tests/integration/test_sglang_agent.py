@@ -148,6 +148,7 @@ async def test_multi_tool_dispatch(model):
     try:
         await agent.invoke_async(problem)
     except MaxTokensReachedException:
+        # Hitting the token limit is allowed here; we only assert on tool usage below.
         pass
 
     # Should have used both tools
