@@ -50,16 +50,12 @@ def _get_server_info(base_url: str, timeout: float = 5.0) -> dict:
         response = httpx.get(f"{base_url}/health", timeout=timeout)
         if response.status_code != 200:
             pytest.exit(f"SGLang server unhealthy: status {response.status_code}", returncode=1)
-            raise
     except httpx.ConnectError:
         pytest.exit(f"Cannot connect to {base_url} - is the server running?", returncode=1)
-        raise
     except httpx.TimeoutException:
         pytest.exit(f"Connection to {base_url} timed out", returncode=1)
-        raise
     except Exception as e:
         pytest.exit(f"Health check failed: {e}", returncode=1)
-        raise
 
     # Get model info
     try:
@@ -67,7 +63,6 @@ def _get_server_info(base_url: str, timeout: float = 5.0) -> dict:
         return response.json()
     except Exception as e:
         pytest.exit(f"Failed to get model info: {e}", returncode=1)
-        raise
 
 
 @pytest.fixture(scope="session")
