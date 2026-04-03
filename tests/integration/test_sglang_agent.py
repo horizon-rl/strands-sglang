@@ -59,7 +59,22 @@ def knowledge_base(query: str) -> str:
 
 
 def assert_trajectory_valid(model, min_response_segments: int = 1):
-    """Assert token trajectory is valid: segments, loss_mask, logprobs, consistency."""
+    """Assert that the model's token trajectory satisfies basic invariants.
+
+    This helper verifies that:
+    - The token manager is non-empty.
+    - ``token_ids``, ``loss_mask`` and ``logprobs`` all have the same length.
+    - The per-segment lengths in ``segment_info`` sum to the total number of tokens.
+    - The first segment is a prompt segment (not a response).
+    - There are at least ``min_response_segments`` response segments.
+    - Each response segment has at least one token with a non-``None`` logprob.
+
+    Args:
+        model: Model instance under test that exposes a ``token_manager`` with
+            token ids, loss mask, logprob information and segment metadata.
+        min_response_segments: Minimum number of response segments required for
+            the trajectory to be considered valid.
+    """
     tm = model.token_manager
     assert len(tm) > 0, "Token manager should have tokens"
     assert len(tm.token_ids) == len(tm.loss_mask) == len(tm.logprobs), "Array lengths must match"
