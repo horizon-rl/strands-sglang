@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-import base64
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator, AsyncIterable
@@ -28,6 +28,9 @@ from typing import (
     cast,
 )
 
+import numpy as np
+import pybase64
+from numpy.typing import NDArray
 from pydantic import BaseModel
 from strands.models import Model
 from strands.types.content import ContentBlock, Messages, SystemContentBlock
@@ -70,6 +73,7 @@ class SGLangModel(Model):
 
         sampling_params: dict[str, Any] | None  # Passed to /generate endpoint
         return_logprob: bool | None  # Return logprobs for all tokens (default: True)
+        return_routed_experts: bool | None  # Return MoE routed expert indices (default: False)
         enable_thinking: bool | None  # Enable thinking mode for Qwen3 hybrid models
 
     def __init__(
@@ -102,6 +106,7 @@ class SGLangModel(Model):
         self.message_count: int = 0
         self.tool_parse_errors: dict[str, int] = {}  # per-tool parse error count
         self.image_data: list[str] = []  # accumulated image data URLs (VLM only)
+        self.routed_experts: NDArray[np.int32] | None = None  # MoE expert indices from last /generate
 
         logger.debug("initialized with config: %s", self.config)
 
@@ -111,6 +116,7 @@ class SGLangModel(Model):
         self.message_count = 0
         self.tool_parse_errors = {}
         self.image_data = []
+        self.routed_experts = None
 
     # -------------------------------------------------------------------------
     # Model interface implementation
@@ -160,7 +166,7 @@ class SGLangModel(Model):
                 result = {"type": "text", "text": text}
             case "image", dict() as image:
                 mime = f"image/{image['format']}"
-                encoded = base64.b64encode(image["source"]["bytes"]).decode()
+                encoded = pybase64.b64encode(image["source"]["bytes"]).decode()
                 result = {"type": "image", "image": f"data:{mime};base64,{encoded}"}
             case "json", data:
                 result = {"type": "text", "text": json.dumps(data)}
@@ -327,6 +333,7 @@ class SGLangModel(Model):
         sampling_params: dict[str, Any] = dict(config.get("sampling_params") or {})
         sampling_params.setdefault("skip_special_tokens", False)
         return_logprob = config.get("return_logprob", True)
+        return_routed_experts = config.get("return_routed_experts", False)
         is_multimodal = await self.client.is_multimodal()
         new_input_ids = self.tokenize_prompt_messages(
             messages=messages,
@@ -348,6 +355,7 @@ class SGLangModel(Model):
                 sampling_params=sampling_params,
                 return_logprob=return_logprob,
                 logprob_start_len=max(0, len(self.token_manager.token_ids) - 1) if return_logprob else None,
+                return_routed_experts=return_routed_experts,
                 image_data=self.image_data or None,
             )
 
@@ -375,6 +383,13 @@ class SGLangModel(Model):
             token_ids=output_ids,
             logprobs=[e[0] for e in output_token_logprobs] if output_token_logprobs else None,
         )
+        # Update routed experts for R3
+        # TODO: pass routed_experts_start_len (like logprob_start_len) once SGLang wires it up,
+        # to avoid receiving the full-sequence payload on every multi-turn call.
+        if return_routed_experts:
+            self.routed_experts = await asyncio.to_thread(
+                lambda: np.frombuffer(pybase64.b64decode(meta_info["routed_experts"].encode("ascii")), dtype=np.int32)
+            )
         self.message_count = len(messages) + 1
 
         # Assistant message content stop

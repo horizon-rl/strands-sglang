@@ -123,6 +123,33 @@ async def vlm_model(tokenizer, sglang_base_url, tool_parser_name):
 
 
 @pytest.fixture
+async def routed_experts_model(tokenizer, sglang_base_url, tool_parser_name):
+    """Create SGLangModel with return_routed_experts=True.
+
+    Skips if the server does not support routed experts (requires MoE model
+    launched with `--enable-return-routed-experts`).
+    """
+    client = SGLangClient(base_url=sglang_base_url)
+
+    # Probe: try a minimal request with return_routed_experts=True
+    probe_ids = list(tokenizer.encode("hi", add_special_tokens=True))
+    resp = await client.generate(input_ids=probe_ids, sampling_params={"max_new_tokens": 1}, return_routed_experts=True)
+    if not resp["meta_info"].get("routed_experts"):
+        await client.close()
+        pytest.skip("Server does not support routed experts (non-MoE model or --enable-return-routed-experts not set)")
+
+    model = SGLangModel(
+        client=client,
+        tokenizer=tokenizer,
+        tool_parser=get_tool_parser(tool_parser_name),
+        sampling_params={"max_new_tokens": 2048},
+        return_routed_experts=True,
+    )
+    yield model
+    await client.close()
+
+
+@pytest.fixture
 def calculator_tool():
     """Sample calculator tool spec for testing."""
     return {
