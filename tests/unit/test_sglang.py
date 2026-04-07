@@ -275,8 +275,8 @@ class TestStreamRoutedExperts:
 
         assert client.generate.call_args.kwargs["return_routed_experts"] is False
 
-    async def test_decoded_and_stored(self, mock_tokenizer):
-        """stream() decodes routed_experts from meta_info and stores on model."""
+    async def test_stored_as_base64(self, mock_tokenizer):
+        """stream() stores routed_experts as raw base64 string from meta_info."""
         experts_array = np.arange(36, dtype=np.int32)
         encoded = pybase64.b64encode(experts_array.tobytes()).decode("ascii")
 
@@ -289,7 +289,7 @@ class TestStreamRoutedExperts:
         async for _ in model.stream(messages):
             pass
 
-        np.testing.assert_array_equal(model.routed_experts, experts_array)
+        assert model.routed_experts == encoded
 
     async def test_raises_when_not_in_response(self, mock_tokenizer):
         """stream() raises KeyError when return_routed_experts=True but server omits it."""
