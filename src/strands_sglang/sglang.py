@@ -385,7 +385,7 @@ class SGLangModel(Model):
         )
         # Update routed experts for R3
         # TODO: pass routed_experts_start_len (like logprob_start_len) once SGLang wires it up,
-        # to avoid receiving the full-sequence payload on every multi-turn call.
+        # Need to reshape to (seq_len-1, num_layers, top_k) once knowing num_layers and top_k
         if return_routed_experts:
             self.routed_experts = await asyncio.to_thread(
                 lambda: np.frombuffer(pybase64.b64decode(meta_info["routed_experts"].encode("ascii")), dtype=np.int32)
