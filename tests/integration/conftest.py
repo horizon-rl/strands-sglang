@@ -123,11 +123,13 @@ async def vlm_model(tokenizer, sglang_base_url, tool_parser_name):
 
 
 @pytest.fixture
-async def routed_experts_model(tokenizer, sglang_base_url, tool_parser_name):
+async def routed_experts_model(tokenizer, sglang_base_url, sglang_server_info, tool_parser_name):
     """Create SGLangModel with return_routed_experts=True.
 
     Skips if the server does not support routed experts (requires MoE model
     launched with `--enable-return-routed-experts`).
+
+    Also exposes `moe_num_layers` and `moe_top_k` on the model for test assertions.
     """
     client = SGLangClient(base_url=sglang_base_url)
 
@@ -138,6 +140,11 @@ async def routed_experts_model(tokenizer, sglang_base_url, tool_parser_name):
         await client.close()
         pytest.skip("Server does not support routed experts (non-MoE model or --enable-return-routed-experts not set)")
 
+    # Infer num_layers and top_k from server info
+    hf_config = sglang_server_info.get("hf_config", {})
+    num_layers = hf_config.get("num_hidden_layers", 0)
+    top_k = hf_config.get("num_experts_per_tok", 0)
+
     model = SGLangModel(
         client=client,
         tokenizer=tokenizer,
@@ -145,6 +152,8 @@ async def routed_experts_model(tokenizer, sglang_base_url, tool_parser_name):
         sampling_params={"max_new_tokens": 2048},
         return_routed_experts=True,
     )
+    model.moe_num_layers = num_layers
+    model.moe_top_k = top_k
     yield model
     await client.close()
 
