@@ -397,25 +397,8 @@ class SGLangModel(Model):
                 logger.warning("Tool parse error for '%s': %s", tool_call.name, (tool_call.raw or "")[:100])
                 self.tool_parse_errors[tool_call.name] = self.tool_parse_errors.get(tool_call.name, 0) + 1
 
-            yield {
-                "contentBlockStart": {
-                    "start": {
-                        "toolUse": {
-                            "toolUseId": tool_call.id,
-                            "name": tool_call.name,
-                        }
-                    }
-                }
-            }
-            yield {
-                "contentBlockDelta": {
-                    "delta": {
-                        "toolUse": {
-                            "input": tool_call.payload,
-                        }
-                    }
-                }
-            }
+            yield {"contentBlockStart": {"start": {"toolUse": {"toolUseId": tool_call.id, "name": tool_call.name}}}}
+            yield {"contentBlockDelta": {"delta": {"toolUse": {"input": tool_call.payload}}}}
             yield {"contentBlockStop": {}}
 
         # Assistant message stop

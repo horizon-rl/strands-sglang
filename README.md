@@ -86,7 +86,7 @@ For RL training with [slime](https://github.com/THUDM/slime/), `SGLangModel` eli
 ```python
 import logging
 from strands import Agent, tool
-from strands_sglang import SGLangModel, ToolLimiter, get_client_from_slime_args
+from strands_sglang import SGLangModel, ToolLimiter, decode_routed_experts, get_client_from_slime_args
 from strands_sglang.tool_parsers import HermesToolParser
 from slime.rollout.sglang_rollout import GenerateState
 from slime.utils.types import Sample
@@ -104,7 +104,6 @@ def execute_python_code(code: str):
 
 async def generate(args, sample: Sample, sampling_params) -> Sample:
     """Generate with tokens captured during generation, no retokenization."""
-    assert not args.partial_rollout, "Partial rollout not supported."
 
     state = GenerateState(args)
     model = SGLangModel(
@@ -112,6 +111,7 @@ async def generate(args, sample: Sample, sampling_params) -> Sample:
         client=get_client_from_slime_args(args),  # this is lru-cached client
         tool_parser=HermesToolParser(),  # tool parsing for wrapped JSON tool calls
         sampling_params=sampling_params,
+        return_routed_experts=True,  # enable R3
     )
 
     tool_limiter = ToolLimiter(max_tool_iters=MAX_TOOL_ITERS, max_tool_calls=MAX_TOOL_CALLS)
@@ -147,6 +147,16 @@ async def generate(args, sample: Sample, sampling_params) -> Sample:
     # Multiple parallel tool calls count as one tool_iter
     sample.tool_iters = tool_limiter.tool_iter_count
     sample.tool_calls = tool_limiter.tool_call_count
+
+    # Decode MoE routed experts for router replay (R3) — shape: (seq_len - 1, num_layers, top_k)
+    if model.routed_experts is not None:
+        # Recommend to wrap into asyncio.to_thread
+        sample.routed_experts = decode_routed_experts(
+            model.routed_experts,
+            seq_len=len(tm.token_ids),
+            num_layers=args.num_layers,
+            top_k=args.moe_router_topk,
+        )
 
     model.reset()
     agent.cleanup()
