@@ -291,27 +291,16 @@ class TestStreamRoutedExperts:
 
         assert model.routed_experts == encoded
 
-    async def test_decode_routed_experts(self, mock_tokenizer):
+    def test_decode_routed_experts_util(self):
         """decode_routed_experts() decodes base64 to shaped numpy array."""
-        num_layers, top_k = 4, 2
-        # Mock generates output_ids=[1, 2], prompt encodes to [100, 101, 102]
-        # total token_ids = [100, 101, 102, 1, 2] → seq_len - 1 = 4
-        mock_tokenizer.encode.return_value = [100, 101, 102]
-        mock_tokenizer.apply_chat_template.return_value = "<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n"
-        experts = np.arange(4 * num_layers * top_k, dtype=np.int32)
+        from strands_sglang import decode_routed_experts
+
+        num_layers, top_k, seq_len = 4, 2, 5
+        experts = np.arange((seq_len - 1) * num_layers * top_k, dtype=np.int32)
         encoded = pybase64.b64encode(experts.tobytes()).decode("ascii")
 
-        response = _make_generate_response()
-        response["meta_info"]["routed_experts"] = encoded
-
-        model, _ = _make_model_with_mock_client(mock_tokenizer, generate_return=response, return_routed_experts=True)
-
-        messages = [{"role": "user", "content": [{"text": "hi"}]}]
-        async for _ in model.stream(messages):
-            pass
-
-        decoded = await model.decode_routed_experts(num_layers=num_layers, top_k=top_k)
-        assert decoded.shape == (4, num_layers, top_k)
+        decoded = decode_routed_experts(encoded, seq_len=seq_len, num_layers=num_layers, top_k=top_k)
+        assert decoded.shape == (seq_len - 1, num_layers, top_k)
         np.testing.assert_array_equal(decoded.ravel(), experts)
 
     async def test_raises_when_not_in_response(self, mock_tokenizer):

@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator, AsyncIterable
@@ -28,9 +27,7 @@ from typing import (
     cast,
 )
 
-import numpy as np
 import pybase64
-from numpy.typing import NDArray
 from pydantic import BaseModel
 from strands.models import Model
 from strands.types.content import ContentBlock, Messages, SystemContentBlock
@@ -117,25 +114,6 @@ class SGLangModel(Model):
         self.tool_parse_errors = {}
         self.image_data = []
         self.routed_experts = None
-
-    async def decode_routed_experts(self, num_layers: int, top_k: int) -> NDArray[np.int32]:
-        """Decode base64 routed experts into a shaped numpy array.
-
-        Args:
-            num_layers: Number of MoE layers in the model.
-            top_k: Number of experts selected per token (moe_router_topk).
-
-        Returns:
-            Array of shape `(seq_len - 1, num_layers, top_k)`.
-        """
-        assert self.routed_experts is not None, "routed_experts is None — was return_routed_experts enabled?"
-        raw = self.routed_experts
-        seq_len = len(self.token_manager.token_ids)
-        return await asyncio.to_thread(
-            lambda: np.frombuffer(pybase64.b64decode(raw.encode("ascii")), dtype=np.int32).reshape(
-                seq_len - 1, num_layers, top_k
-            )
-        )
 
     # -------------------------------------------------------------------------
     # Model interface implementation

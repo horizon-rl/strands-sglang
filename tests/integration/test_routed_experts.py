@@ -17,8 +17,8 @@
 import json
 
 import numpy as np
-import pytest
-from strands import Agent
+
+from strands_sglang import decode_routed_experts
 
 
 async def test_single_turn_base64_and_decode(routed_experts_model):
@@ -37,33 +37,53 @@ async def test_single_turn_base64_and_decode(routed_experts_model):
 
     # decode_routed_experts returns correct shape
     if model.moe_num_layers and model.moe_top_k:
-        decoded = await model.decode_routed_experts(num_layers=model.moe_num_layers, top_k=model.moe_top_k)
         total_tokens = len(model.token_manager.token_ids)
+        decoded = decode_routed_experts(
+            model.routed_experts, seq_len=total_tokens, num_layers=model.moe_num_layers, top_k=model.moe_top_k
+        )
         assert decoded.shape == (total_tokens - 1, model.moe_num_layers, model.moe_top_k)
         assert decoded.dtype == np.int32
 
 
-async def test_multi_turn_agent_with_tools(routed_experts_model):
-    """Multi-turn agent loop: routed_experts covers the full trajectory."""
+async def test_multi_turn_agent_with_tools(routed_experts_model, calculator_tool):
+    """Multi-turn tool use updates routed experts across turns."""
     model = routed_experts_model
+    system_prompt = "You are a calculator. Use the calculator tool for ALL math."
 
-    def calculator(expression: str) -> str:
-        """Evaluate a math expression."""
-        return str(eval(expression))  # noqa: S307
+    # Turn 1: model should produce a tool call
+    messages = [{"role": "user", "content": [{"text": "What is 5 * 8?"}]}]
+    async for _ in model.stream(messages, tool_specs=[calculator_tool], system_prompt=system_prompt):
+        pass
 
-    agent = Agent(
-        model=model,
-        tools=[calculator],
-        system_prompt="Use the calculator tool for ALL math. Be brief.",
+    experts_turn1 = model.routed_experts
+    assert experts_turn1 is not None
+
+    # Inject tool result for turn 2
+    messages.append(
+        {
+            "role": "assistant",
+            "content": [
+                {"text": '<tool_call>\n{"name": "calculator", "arguments": {"expression": "5 * 8"}}\n</tool_call>'},
+                {"toolUse": {"toolUseId": "call_1", "name": "calculator", "input": {"expression": "5 * 8"}}},
+            ],
+        }
     )
-    await agent.invoke_async("What is 137 * 251?")
+    messages.append({"role": "user", "content": [{"toolResult": {"toolUseId": "call_1", "content": [{"text": "40"}]}}]})
 
-    assert model.routed_experts is not None
-    total_tokens = len(model.token_manager.token_ids)
-    assert total_tokens > 10  # sanity: multi-turn should produce many tokens
+    # Turn 2: model should produce final answer
+    async for _ in model.stream(messages, tool_specs=[calculator_tool], system_prompt=system_prompt):
+        pass
+
+    experts_turn2 = model.routed_experts
+    assert experts_turn2 is not None
+    # Turn 2 covers more tokens (full sequence), so the base64 string should be longer
+    assert len(experts_turn2) > len(experts_turn1)
 
     if model.moe_num_layers and model.moe_top_k:
-        decoded = await model.decode_routed_experts(num_layers=model.moe_num_layers, top_k=model.moe_top_k)
+        total_tokens = len(model.token_manager.token_ids)
+        decoded = decode_routed_experts(
+            experts_turn2, seq_len=total_tokens, num_layers=model.moe_num_layers, top_k=model.moe_top_k
+        )
         assert decoded.shape == (total_tokens - 1, model.moe_num_layers, model.moe_top_k)
 
 
@@ -78,11 +98,3 @@ async def test_reset_clears(routed_experts_model):
     assert model.routed_experts is not None
     model.reset()
     assert model.routed_experts is None
-
-
-async def test_decode_fails_when_none(routed_experts_model):
-    """decode_routed_experts raises when routed_experts is None."""
-    model = routed_experts_model
-    model.reset()
-    with pytest.raises(AssertionError, match="routed_experts is None"):
-        await model.decode_routed_experts(num_layers=1, top_k=1)

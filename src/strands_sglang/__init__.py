@@ -27,10 +27,11 @@ from .sglang import SGLangModel
 from .token import Token, TokenManager
 from .tool_limiter import MaxToolCallsReachedError, MaxToolIterationsReachedError, ToolLimiter
 from .tool_parsers import get_tool_parser
-from .utils import get_client, get_client_from_slime_args, get_tokenizer
+from .utils import decode_routed_experts, get_client, get_client_from_slime_args, get_tokenizer
 
 __all__ = [
-    # Cache utilities
+    # Utilities
+    "decode_routed_experts",
     "get_client",
     "get_client_from_slime_args",
     "get_tokenizer",
