@@ -118,7 +118,7 @@ class SGLangModel(Model):
         self.image_data = []
         self.routed_experts = None
 
-    async def decode_routed_experts(self, num_layers: int, top_k: int) -> NDArray[np.int32] | None:
+    async def decode_routed_experts(self, num_layers: int, top_k: int) -> NDArray[np.int32]:
         """Decode base64 routed experts into a shaped numpy array.
 
         Args:
@@ -126,13 +126,16 @@ class SGLangModel(Model):
             top_k: Number of experts selected per token (moe_router_topk).
 
         Returns:
-            Array of shape `(seq_len - 1, num_layers, top_k)`, or None if not available.
+            Array of shape `(seq_len - 1, num_layers, top_k)`.
         """
-        if self.routed_experts is None:
-            return None
+        assert self.routed_experts is not None, "routed_experts is None — was return_routed_experts enabled?"
         raw = self.routed_experts
-        flat = await asyncio.to_thread(lambda: np.frombuffer(pybase64.b64decode(raw.encode("ascii")), dtype=np.int32))
-        return flat.reshape(-1, num_layers, top_k)
+        seq_len = len(self.token_manager.token_ids)
+        return await asyncio.to_thread(
+            lambda: np.frombuffer(pybase64.b64decode(raw.encode("ascii")), dtype=np.int32).reshape(
+                seq_len - 1, num_layers, top_k
+            )
+        )
 
     # -------------------------------------------------------------------------
     # Model interface implementation
