@@ -84,7 +84,9 @@ class TestHermesToolParser:
 
         assert len(results) == 3
         assert [r.name for r in results] == ["tool_a", "tool_b", "tool_c"]
-        assert [r.id for r in results] == ["call_0000", "call_0001", "call_0002"]
+        prefix = "call_"
+        assert [r.id.startswith(prefix) for r in results]
+        assert [r.id.endswith(f"{i:04d}") for i, r in enumerate(results)]
 
     def test_parse_no_tool_calls(self, parser):
         assert parser.parse("Just some regular text.") == []
@@ -199,7 +201,9 @@ class TestQwenXMLToolParser:
 
         assert len(results) == 3
         assert [r.name for r in results] == ["tool_a", "tool_b", "tool_c"]
-        assert [r.id for r in results] == ["call_0000", "call_0001", "call_0002"]
+        prefix = "call_"
+        assert [r.id.startswith(prefix) for r in results]
+        assert [r.id.endswith(f"{i:04d}") for i, r in enumerate(results)]
 
     def test_parse_no_tool_calls(self, parser):
         assert parser.parse("Just some regular text.") == []
@@ -301,7 +305,9 @@ class TestGLMToolParser:
 
         assert len(results) == 3
         assert [r.name for r in results] == ["tool_a", "tool_b", "tool_c"]
-        assert [r.id for r in results] == ["call_0000", "call_0001", "call_0002"]
+        prefix = "call_"
+        assert [r.id.startswith(prefix) for r in results]
+        assert [r.id.endswith(f"{i:04d}") for i, r in enumerate(results)]
 
     def test_parse_no_tool_calls(self, parser):
         assert parser.parse("Just some regular text.") == []

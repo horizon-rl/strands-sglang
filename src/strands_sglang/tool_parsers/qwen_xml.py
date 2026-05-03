@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import uuid
 from typing import Any
 
 from typing_extensions import override
@@ -56,10 +57,11 @@ class QwenXMLToolParser(ToolParser):
         text = self.think_pattern.sub("", text)
 
         tool_calls: list[ToolParseResult] = []
+        prefix = uuid.uuid4().hex[:8]
 
         for i, match in enumerate(self.tool_pattern.finditer(text)):
             raw_content = match.group(1).strip()
-            tool_call_id = f"call_{i:04d}"  # Sequential IDs for sortability
+            tool_call_id = f"call_{prefix}{i:04d}"  # Unique prefix + sequential index
 
             # Parse the function tag
             func_match = self._FUNCTION_PATTERN.search(raw_content)
