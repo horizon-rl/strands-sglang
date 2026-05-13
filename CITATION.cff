@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+message: "Please cite strands-sglang if you use this code in your own work."
+title: "SGLang model provider for Strands Agents for on-policy agentic RL training."
+authors:
+  - family-names: "Yuan"
+    given-names: "He"
+license: Apache-2.0
+url: "https://github.com/strands-rl/strands-sglang/"
