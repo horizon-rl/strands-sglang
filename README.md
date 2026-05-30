@@ -7,27 +7,24 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/horizon-rl/strands-sglang)
 [![Blog](https://img.shields.io/badge/Blog-Strands--SGLang-000?logo=rss&logoColor=fff)](https://yuanhe.wiki/posts/technical/strands-sglang/)
-[![Stranes-Agents](https://img.shields.io/badge/Strands-Featured-111111?logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjkwIiBoZWlnaHQ9IjQ2MyIgdmlld0JveD0iMCAwIDI5MCA0NjMiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BCjxwYXRoIGQ9Ik05Ny4yOTAyIDUyLjc4ODRDODUuMDY3NCA0OS4xNjY3IDcyLjIyMzQgNTYuMTM4OSA2OC42MDE3IDY4LjM2MTZDNjQuOTgwMSA4MC41ODQzIDcxLjk1MjQgOTMuNDI4MyA4NC4xNzQ5IDk3LjA1MDFMMjM1LjExNyAxMzkuNzc1QzI0NS4yMjMgMTQyLjc2OSAyNDYuMzU3IDE1Ni42MjggMjM2Ljg3NCAxNjEuMjI2TDMyLjU0NiAyNjAuMjkxQy0xNC45NDM5IDI4My4zMTYgLTkuMTYxMDcgMzUyLjc0IDQxLjQ4MzUgMzY3LjU5MUwxODkuNTUxIDQxMS4wMDlMMTkwLjEyNSA0MTEuMTY5QzIwMi4xODMgNDE0LjM3NiAyMTQuNjY1IDQwNy4zOTYgMjE4LjE5NiAzOTUuMzU1QzIyMS43ODQgMzgzLjEyMiAyMTQuNzc0IDM3MC4yOTYgMjAyLjU0MSAzNjYuNzA5TDU0LjQ3MzggMzIzLjI5MUM0NC4zNDQ3IDMyMC4zMjEgNDMuMTg3OSAzMDYuNDM2IDUyLjY4NTcgMzAxLjgzMUwyNTcuMDE0IDIwMi43NjZDMzA0LjQzMiAxNzkuNzc2IDI5OC43NTggMTEwLjQ4MyAyNDguMjMzIDk1LjUxMkw5Ny4yOTAyIDUyLjc4ODRaIiBmaWxsPSIjOTg5ODk4Ii8%2BCjxwYXRoIGQ9Ik0yNTkuMTQ3IDAuOTgxODEyQzI3MS4zODkgLTIuNTc0OTggMjg0LjE5NyA0LjQ2NTcxIDI4Ny43NTQgMTYuNzA3NEMyOTEuMzExIDI4Ljk0OTIgMjg0LjI3IDQxLjc1NyAyNzIuMDI4IDQ1LjMxMzhMNzEuMTcyNyAxMDMuNjcxQzQwLjcxNDIgMTEyLjUyMSAzNy4xOTc2IDE1NC4yNjIgNjUuNzQ1OSAxNjguMDgzTDI0MS4zNDMgMjUzLjA5M0MzMDcuODcyIDI4NS4zMDIgMjk5Ljc5NCAzODIuNTQ2IDIyOC44NjIgNDAzLjMzNkwzMC40MDQxIDQ2MS41MDJDMTguMTcwNyA0NjUuMDg4IDUuMzQ3MDggNDU4LjA3OCAxLjc2MTUzIDQ0NS44NDRDLTEuODIzOSA0MzMuNjExIDUuMTg2MzcgNDIwLjc4NyAxNy40MTk3IDQxNy4yMDJMMjE1Ljg3OCAzNTkuMDM1QzI0Ni4yNzcgMzUwLjEyNSAyNDkuNzM5IDMwOC40NDkgMjIxLjIyNiAyOTQuNjQ1TDQ1LjYyOTcgMjA5LjYzNUMtMjAuOTgzNCAxNzcuMzg2IC0xMi43NzcyIDc5Ljk4OTMgNTguMjkyOCA1OS4zNDAyTDI1OS4xNDcgMC45ODE4MTJaIiBmaWxsPSIjMDBGRjc3Ii8%2BCjwvc3ZnPgo%3D&logoWidth=14)](https://strandsagents.com/latest/documentation/docs/community/model-providers/sglang/)
+[![Strands-Agents](https://img.shields.io/badge/Strands-Featured-111111?logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjkwIiBoZWlnaHQ9IjQ2MyIgdmlld0JveD0iMCAwIDI5MCA0NjMiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BCjxwYXRoIGQ9Ik05Ny4yOTAyIDUyLjc4ODRDODUuMDY3NCA0OS4xNjY3IDcyLjIyMzQgNTYuMTM4OSA2OC42MDE3IDY4LjM2MTZDNjQuOTgwMSA4MC41ODQzIDcxLjk1MjQgOTMuNDI4MyA4NC4xNzQ5IDk3LjA1MDFMMjM1LjExNyAxMzkuNzc1QzI0NS4yMjMgMTQyLjc2OSAyNDYuMzU3IDE1Ni42MjggMjM2Ljg3NCAxNjEuMjI2TDMyLjU0NiAyNjAuMjkxQy0xNC45NDM5IDI4My4zMTYgLTkuMTYxMDcgMzUyLjc0IDQxLjQ4MzUgMzY3LjU5MUwxODkuNTUxIDQxMS4wMDlMMTkwLjEyNSA0MTEuMTY5QzIwMi4xODMgNDE0LjM3NiAyMTQuNjY1IDQwNy4zOTYgMjE4LjE5NiAzOTUuMzU1QzIyMS43ODQgMzgzLjEyMiAyMTQuNzc0IDM3MC4yOTYgMjAyLjU0MSAzNjYuNzA5TDU0LjQ3MzggMzIzLjI5MUM0NC4zNDQ3IDMyMC4zMjEgNDMuMTg3OSAzMDYuNDM2IDUyLjY4NTcgMzAxLjgzMUwyNTcuMDE0IDIwMi43NjZDMzA0LjQzMiAxNzkuNzc2IDI5OC43NTggMTEwLjQ4MyAyNDguMjMzIDk1LjUxMkw5Ny4yOTAyIDUyLjc4ODRaIiBmaWxsPSIjOTg5ODk4Ii8%2BCjxwYXRoIGQ9Ik0yNTkuMTQ3IDAuOTgxODEyQzI3MS4zODkgLTIuNTc0OTggMjg0LjE5NyA0LjQ2NTcxIDI4Ny43NTQgMTYuNzA3NEMyOTEuMzExIDI4Ljk0OTIgMjg0LjI3IDQxLjc1NyAyNzIuMDI4IDQ1LjMxMzhMNzEuMTcyNyAxMDMuNjcxQzQwLjcxNDIgMTEyLjUyMSAzNy4xOTc2IDE1NC4yNjIgNjUuNzQ1OSAxNjguMDgzTDI0MS4zNDMgMjUzLjA5M0MzMDcuODcyIDI4NS4zMDIgMjk5Ljc5NCAzODIuNTQ2IDIyOC44NjIgNDAzLjMzNkwzMC40MDQxIDQ2MS41MDJDMTguMTcwNyA0NjUuMDg4IDUuMzQ3MDggNDU4LjA3OCAxLjc2MTUzIDQ0NS44NDRDLTEuODIzOSA0MzMuNjExIDUuMTg2MzcgNDIwLjc4NyAxNy40MTk3IDQxNy4yMDJMMjE1Ljg3OCAzNTkuMDM1QzI0Ni4yNzcgMzUwLjEyNSAyNDkuNzM5IDMwOC40NDkgMjIxLjIyNiAyOTQuNjQ1TDQ1LjYyOTcgMjA5LjYzNUMtMjAuOTgzNCAxNzcuMzg2IC0xMi43NzcyIDc5Ljk4OTMgNTguMjkyOCA1OS4zNDAyTDI1OS4xNDcgMC45ODE4MTJaIiBmaWxsPSIjMDBGRjc3Ii8%2BCjwvc3ZnPgo%3D&logoWidth=14)](https://strandsagents.com/latest/documentation/docs/community/model-providers/sglang/)
 
-SGLang model provider for [Strands Agents SDK](https://github.com/strands-agents/sdk-python) with Token-in/Token-out rollouts for on-policy agentic RL training (no retokenization drift).
+
+**Agentic RL, done correctly.**
+
+- [Strands Agents SDK](https://github.com/strands-agents/sdk-python): a harness builder whose event-based hooks make the agent loop fully customizable.
+- [SGLang](https://docs.sglang.io/): a high-performance serving framework for fast, high-concurrency rollouts that exposes per-token metadata.
+
+Strands-SGLang bridges the two so multi-turn rollouts stay on-policy — token-in, token-out, no silent retokenization drift.
 
 ## Features
 
-This package is designed to make the serving-oriented agent scaffold [Strands Agents SDK](https://github.com/strands-agents/sdk-python) training-ready by exposing end-to-end, token-level rollouts from SGLang while reusing Strands’ customizable agent loop.
-
-- **Token-In/Token-Out** rollouts (token IDs + logprobs/masks): no retokenization drift
-- **Strict, on-policy tool-call parsing**: no heuristic repair or post-processing; tool calls are parsed exactly as generated by models
-- **Native SGLang `/generate`**: high-throughput, non-streaming rollouts
+- **Token-In/Token-Out** rollouts: model-generated tokens carried through as-is; only new messages are tokenized each turn with incremental chat templating
+- **Strict tool-call parsing**: parsed exactly as generated, no heuristic repair; built-in parsers for Qwen, GLM, Kimi, etc.
+- **Easy agent-loop customization**: Strands event hooks — cap tool calls with built-in `ToolLimiter`, or add your own
+- **Native SGLang `/generate` endpoint**: high-throughput, non-streaming rollouts
 
 > For RL environment integration, please refer to [`strands-env`](https://github.com/horizon-rl/strands-env)
-
-
-## Requirements
-
-- Python 3.10+
-- Strands Agents SDK
-- SGLang server running with your model
-- HuggingFace tokenizer for the model
 
 ## Installation
 
@@ -48,13 +45,10 @@ pip install -e ".[dev]"
 ### 1. Start SGLang Server
 
 ```bash
-python -m sglang.launch_server \
-    --model-path Qwen/Qwen3.5-4B \
-    --port 30000 \
-    --host 0.0.0.0
+python -m sglang.launch_server --model-path Qwen/Qwen3.5-4B
 ```
 
-### 2. Basic Agent
+### 2. Run an Agent
 
 ```python
 import asyncio
@@ -65,105 +59,31 @@ from strands_sglang import SGLangClient, SGLangModel
 from strands_sglang.tool_parsers import get_tool_parser
 
 async def main():
-    client = SGLangClient(base_url="http://localhost:30000")
-    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3.5-4B")
-    model = SGLangModel(client=client, tokenizer=tokenizer, tool_parser=get_tool_parser("qwen_xml"))
+    model = SGLangModel(
+        client=SGLangClient(base_url="http://localhost:30000"),
+        tokenizer=AutoTokenizer.from_pretrained("Qwen/Qwen3.5-4B"),
+        tool_parser=get_tool_parser("qwen_xml"),
+    )
     agent = Agent(model=model, tools=[calculator])
+    await agent.invoke_async("What is 25 * 17?")
 
-    result = await agent.invoke_async("What is 25 * 17?")
-    print(result)
-
-    # Access token data for RL training
-    print(f"Tokens: {model.token_manager.token_ids}")
-    print(f"Loss mask: {model.token_manager.loss_mask}")
-    print(f"Logprobs: {model.token_manager.logprobs}")
+    # SGLangModel captures the full token trajectory for on-policy RL training
+    tm = model.token_manager
+    print(tm.token_ids, tm.loss_mask, tm.logprobs)
 
 asyncio.run(main())
 ```
 
-## Training with `slime`
+## RL Training
 
-For RL training with [slime](https://github.com/THUDM/slime/), `SGLangModel` eliminates the retokenization step, see an concrete example at [slime/examples/strands_sglang](https://github.com/THUDM/slime/tree/main/examples/strands_sglang):
+In principle, Strands-SGLang can be seen as a drop-in agentic rollout service and can be integrated with any RL training framework. A concrete example of training a math coding agent ([ReTool](https://arxiv.org/abs/2504.11536)) is available at [slime/examples/strands_sglang](https://github.com/THUDM/slime/tree/main/examples/strands_sglang).
 
-```python
-import logging
-from strands import Agent, tool
-from strands_sglang import SGLangModel, ToolLimiter, decode_routed_experts, get_client_from_slime_args
-from strands_sglang.tool_parsers import HermesToolParser
-from slime.rollout.sglang_rollout import GenerateState
-from slime.utils.types import Sample
+Some key highlights of adapting Strands-SGLang to any RL framework:
+- Pass tokens and token metadata from `TokenManager` for on-policy rollouts
+- Hook your harness with the built-in `ToolLimiter` (or your own) for controlled rollouts
+- Use a shared `SGLangClient` and HF tokenizer; don't create one instance per rollout
+- Classify the rollout's termination reason properly — it shapes reward and sampling
 
-SYSTEM_PROMPT = "..."
-MAX_TOOL_ITERS = 5
-MAX_TOOL_CALLS = None  # No limit
-
-
-@tool
-def execute_python_code(code: str):
-    """Execute Python code and return the output."""
-    ...
-
-
-async def generate(args, sample: Sample, sampling_params) -> Sample:
-    """Generate with tokens captured during generation, no retokenization."""
-
-    state = GenerateState(args)
-    model = SGLangModel(
-        tokenizer=state.tokenizer,
-        client=get_client_from_slime_args(args),  # this is lru-cached client
-        tool_parser=HermesToolParser(),  # tool parsing for wrapped JSON tool calls
-        sampling_params=sampling_params,
-        return_routed_experts=True,  # enable R3
-    )
-
-    tool_limiter = ToolLimiter(max_tool_iters=MAX_TOOL_ITERS, max_tool_calls=MAX_TOOL_CALLS)
-    agent = Agent(
-        model=model,
-        tools=[execute_python_code],
-        hooks=[tool_limiter],
-        callback_handler=None,
-        system_prompt=SYSTEM_PROMPT,
-    )
-
-    # Don't set --apply-chat-template in rollout args, it will make user prompt wrapped twice
-    prompt = sample.prompt if isinstance(sample.prompt, str) else sample.prompt[0]["content"]
-
-    try:
-        await agent.invoke_async(prompt)
-        sample.status = Sample.Status.COMPLETED
-    except Exception as e:
-        # Default all failed rollouts to TRUNCATED; customize your logic here if needed
-        sample.status = Sample.Status.TRUNCATED
-        logger.warning(f"TRUNCATED: {type(e).__name__}: {e}")
-
-    # Extract token trajectory from token_manager
-    tm = model.token_manager
-    prompt_len = len(tm.segments[0])  # system + user are first segment
-    sample.tokens = tm.token_ids
-    sample.loss_mask = tm.loss_mask[prompt_len:]
-    sample.rollout_log_probs = tm.logprobs[prompt_len:]
-    sample.response_length = len(sample.tokens) - prompt_len
-    sample.response = model.tokenizer.decode(sample.tokens[prompt_len:], skip_special_tokens=False)
-
-    # Record tool call stats for reward computation if needed
-    # Multiple parallel tool calls count as one tool_iter
-    sample.tool_iters = tool_limiter.tool_iter_count
-    sample.tool_calls = tool_limiter.tool_call_count
-
-    # Decode MoE routed experts for router replay (R3) — shape: (seq_len - 1, num_layers, top_k)
-    if model.routed_experts is not None:
-        # Recommend to wrap into asyncio.to_thread
-        sample.routed_experts = decode_routed_experts(
-            model.routed_experts,
-            seq_len=len(tm.token_ids),
-            num_layers=args.num_layers,
-            top_k=args.moe_router_topk,
-        )
-
-    model.reset()
-    agent.cleanup()
-    return sample
-```
 
 ## Testing
 
@@ -196,11 +116,6 @@ docs: update usage examples
 ```
 
 Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
-
-## Related Projects
-
-- [agent-core-rl-toolkit](https://github.com/awslabs/agentcore-rl-toolkit)  - RL training toolkit with Bedrock AgentCore
-- [strands-vllm](https://github.com/agents-community/strands-vllm) - Community vLLM provider for Strands Agents SDK
 
 ## License
 
