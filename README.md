@@ -15,13 +15,14 @@
 - [Strands Agents SDK](https://github.com/strands-agents/sdk-python): a harness builder whose event-based hooks make the agent loop fully customizable.
 - [SGLang](https://docs.sglang.io/): a high-performance serving framework for fast, high-concurrency rollouts that exposes per-token metadata.
 
-Strands-SGLang bridges the two so multi-turn rollouts stay on-policy — token-in, token-out, no silent retokenization drift.
+**Strands-SGLang** bridges the two so multi-turn rollouts stay on-policy — token-in, token-out, no silent retokenization drift.
 
 ## Features
 
-- **Token-In/Token-Out** rollouts: model-generated tokens carried through as-is; only new messages are tokenized each turn with incremental chat templating
-- **Strict tool-call parsing**: parsed exactly as generated, no heuristic repair; built-in parsers for Qwen, GLM, Kimi, etc.
-- **Easy agent-loop customization**: Strands event hooks — cap tool calls with built-in `ToolLimiter`, or add your own
+- **Token-In/Token-Out** rollouts: model-generated tokens carried through as-is
+    - Only new messages are tokenized each turn with **incremental chat templating**
+- **Strict tool-call parsing**: parsed exactly as generated, no heuristic repair
+- **Harness customization**: pass tools and hooks into `Agent` to customize your harness
 - **Native SGLang `/generate` endpoint**: high-throughput, non-streaming rollouts
 
 > For RL environment integration, please refer to [`strands-env`](https://github.com/horizon-rl/strands-env)
