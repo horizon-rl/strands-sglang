@@ -100,7 +100,9 @@ class SGLangModel(Model):
 
         # State tracking (this makes SGLangModel stateful)
         self.token_manager = TokenManager()
-        self.routed_experts: str | None = None  # base64-encoded MoE expert indices (flat int32)
+        # Per-turn base64 routing slices (each covers this turn's new tokens via
+        # routed_experts_start_len). decode_routed_experts() stitches them together.
+        self.routed_experts: list[str] = []
         self.message_count: int = 0
         self.tool_parse_errors: dict[str, int] = {}  # per-tool parse error count
         self.image_data: list[str] = []  # accumulated image data URLs (VLM only)
@@ -113,7 +115,7 @@ class SGLangModel(Model):
         self.message_count = 0
         self.tool_parse_errors = {}
         self.image_data = []
-        self.routed_experts = None
+        self.routed_experts = []
 
     # -------------------------------------------------------------------------
     # Model interface implementation
@@ -353,6 +355,8 @@ class SGLangModel(Model):
                 return_logprob=return_logprob,
                 logprob_start_len=max(0, len(self.token_manager.token_ids) - 1) if return_logprob else None,
                 return_routed_experts=return_routed_experts,
+                # Capture only this turn's new tokens (server crops to [start_len, seqlen - 1)); mirrors logprob_start_len.
+                routed_experts_start_len=max(0, len(self.token_manager.token_ids) - 1) if return_routed_experts else 0,
                 image_data=self.image_data or None,
             )
 
@@ -380,10 +384,9 @@ class SGLangModel(Model):
             token_ids=output_ids,
             logprobs=[e[0] for e in output_token_logprobs] if output_token_logprobs else None,
         )
-        # Update routed experts for R3
-        # TODO: pass routed_experts_start_len (like logprob_start_len) once SGLang wires it up,
-        # to avoid receiving the full-sequence payload on every multi-turn call.
-        self.routed_experts = meta_info["routed_experts"] if return_routed_experts else None
+        # Collect this turn's routing slice; decode_routed_experts() stitches the per-turn slices.
+        if return_routed_experts:
+            self.routed_experts.append(meta_info["routed_experts"])  # KeyError if server omits it
         # Update message count
         self.message_count = len(messages) + 1
 

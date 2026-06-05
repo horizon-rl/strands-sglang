@@ -86,18 +86,20 @@ def get_tokenizer(tokenizer_path: str) -> PreTrainedTokenizerBase:
     return AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
 
 
-def decode_routed_experts(routed_experts: str, seq_len: int, num_layers: int, top_k: int) -> NDArray[np.int32]:
-    """Decode base64-encoded routed experts into a shaped numpy array.
+def decode_routed_experts(routed_experts: list[str], num_layers: int, top_k: int) -> NDArray[np.int32]:
+    """Decode and stitch per-turn routed-experts slices into a shaped numpy array.
+
+    `SGLangModel.routed_experts` is a list of base64 slices, one per turn, each
+    captured via `routed_experts_start_len` to cover only that turn's new tokens.
+    Concatenating their int32 bytes yields the full trajectory's routing.
 
     Args:
-        routed_experts: Base64-encoded string of int32 expert indices from SGLang.
-        seq_len: Total number of tokens in the sequence.
+        routed_experts: Per-turn base64 strings of int32 expert indices from SGLang.
         num_layers: Number of MoE layers in the model.
         top_k: Number of experts selected per token (moe_router_topk).
 
     Returns:
-        Array of shape `(seq_len - 1, num_layers, top_k)`.
+        Array of shape `(total_tokens - 1, num_layers, top_k)`.
     """
-    return np.frombuffer(pybase64.b64decode(routed_experts.encode("ascii")), dtype=np.int32).reshape(
-        seq_len - 1, num_layers, top_k
-    )
+    buffer = b"".join(pybase64.b64decode(s.encode("ascii")) for s in routed_experts)
+    return np.frombuffer(buffer, dtype=np.int32).reshape(-1, num_layers, top_k)
