@@ -276,7 +276,7 @@ class TestStreamRoutedExperts:
         assert client.generate.call_args.kwargs["return_routed_experts"] is False
 
     async def test_stored_as_base64(self, mock_tokenizer):
-        """stream() stores routed_experts as raw base64 string from meta_info."""
+        """stream() appends the raw base64 slice from meta_info to routed_experts."""
         experts_array = np.arange(36, dtype=np.int32)
         encoded = pybase64.b64encode(experts_array.tobytes()).decode("ascii")
 
@@ -289,18 +289,23 @@ class TestStreamRoutedExperts:
         async for _ in model.stream(messages):
             pass
 
-        assert model.routed_experts == encoded
+        assert model.routed_experts == [encoded]
 
     def test_decode_routed_experts_util(self):
-        """decode_routed_experts() decodes base64 to shaped numpy array."""
+        """decode_routed_experts() stitches per-turn slices into a shaped numpy array."""
         from strands_sglang import decode_routed_experts
 
-        num_layers, top_k, seq_len = 4, 2, 5
-        experts = np.arange((seq_len - 1) * num_layers * top_k, dtype=np.int32)
-        encoded = pybase64.b64encode(experts.tobytes()).decode("ascii")
+        num_layers, top_k, total_rows = 4, 2, 4
+        experts = np.arange(total_rows * num_layers * top_k, dtype=np.int32)
+        # Split across two turns to exercise the stitching path
+        split = 2 * num_layers * top_k
+        slices = [
+            pybase64.b64encode(experts[:split].tobytes()).decode("ascii"),
+            pybase64.b64encode(experts[split:].tobytes()).decode("ascii"),
+        ]
 
-        decoded = decode_routed_experts(encoded, seq_len=seq_len, num_layers=num_layers, top_k=top_k)
-        assert decoded.shape == (seq_len - 1, num_layers, top_k)
+        decoded = decode_routed_experts(slices, num_layers=num_layers, top_k=top_k)
+        assert decoded.shape == (total_rows, num_layers, top_k)
         np.testing.assert_array_equal(decoded.ravel(), experts)
 
     async def test_raises_when_not_in_response(self, mock_tokenizer):
@@ -311,3 +316,71 @@ class TestStreamRoutedExperts:
         with pytest.raises(KeyError, match="routed_experts"):
             async for _ in model.stream(messages):
                 pass
+
+    async def test_start_len_zero_on_first_turn(self, mock_tokenizer):
+        """stream() passes routed_experts_start_len=0 on the first turn (empty trajectory)."""
+        response = _make_generate_response()
+        response["meta_info"]["routed_experts"] = pybase64.b64encode(np.zeros(1, dtype=np.int32).tobytes()).decode()
+        model, client = _make_model_with_mock_client(
+            mock_tokenizer, generate_return=response, return_routed_experts=True
+        )
+
+        messages = [{"role": "user", "content": [{"text": "hi"}]}]
+        async for _ in model.stream(messages):
+            pass
+
+        assert client.generate.call_args.kwargs["routed_experts_start_len"] == 0
+
+    async def test_start_len_defaults_to_zero_when_not_capturing(self, mock_tokenizer):
+        """stream() passes routed_experts_start_len=0 when routing capture is disabled."""
+        model, client = _make_model_with_mock_client(mock_tokenizer)
+
+        messages = [{"role": "user", "content": [{"text": "hi"}]}]
+        async for _ in model.stream(messages):
+            pass
+
+        assert client.generate.call_args.kwargs["routed_experts_start_len"] == 0
+
+    async def test_multi_turn_collects_per_turn_slices(self, mock_tokenizer):
+        """Each turn appends its own slice; decode_routed_experts stitches the full sequence.
+
+        The server returns only this turn's rows (cropped by routed_experts_start_len),
+        so routed_experts holds one base64 slice per turn and stitching them reconstructs
+        the full trajectory.
+        """
+        from strands_sglang import decode_routed_experts
+
+        # 1 layer, 1 top_k so each int32 is one routing row
+        blob1 = pybase64.b64encode(np.array([10, 11, 12, 13], dtype=np.int32).tobytes()).decode("ascii")
+        blob2 = pybase64.b64encode(np.array([20, 21], dtype=np.int32).tobytes()).decode("ascii")
+        resp1 = _make_generate_response()
+        resp1["meta_info"]["routed_experts"] = blob1
+        resp2 = _make_generate_response()
+        resp2["meta_info"]["routed_experts"] = blob2
+
+        model, client = _make_model_with_mock_client(mock_tokenizer, return_routed_experts=True)
+        model.__dict__["message_separator"] = ""  # mock tokenizer has no real chat template
+        client.generate = AsyncMock(side_effect=[resp1, resp2])
+
+        # Turn 1: trajectory starts empty → start_len 0, one slice collected
+        messages = [{"role": "user", "content": [{"text": "hi"}]}]
+        async for _ in model.stream(messages):
+            pass
+        assert model.routed_experts == [blob1]
+        assert client.generate.call_args_list[0].kwargs["routed_experts_start_len"] == 0
+
+        # Turn 2: append the assistant reply + a new user message
+        messages += [
+            {"role": "assistant", "content": [{"text": "ok"}]},
+            {"role": "user", "content": [{"text": "again"}]},
+        ]
+        async for _ in model.stream(messages):
+            pass
+
+        # Turn 1 left 7 tokens (5 prompt + 2 response) → start_len = max(0, 7 - 1) = 6
+        assert client.generate.call_args_list[1].kwargs["routed_experts_start_len"] == 6
+        assert model.routed_experts == [blob1, blob2]
+
+        # Stitching the per-turn slices yields the full-trajectory routing
+        decoded = decode_routed_experts(model.routed_experts, num_layers=1, top_k=1)
+        np.testing.assert_array_equal(decoded.ravel(), np.array([10, 11, 12, 13, 20, 21], dtype=np.int32))
