@@ -18,7 +18,7 @@ import json
 
 import numpy as np
 
-from strands_sglang import decode_routed_experts
+from strands_sglang import Rollout
 
 
 async def test_single_turn_base64_and_decode(routed_experts_model):
@@ -39,7 +39,9 @@ async def test_single_turn_base64_and_decode(routed_experts_model):
     # decode_routed_experts returns correct shape
     if model.moe_num_layers and model.moe_top_k:
         total_tokens = len(model.token_manager.token_ids)
-        decoded = decode_routed_experts(model.routed_experts, num_layers=model.moe_num_layers, top_k=model.moe_top_k)
+        decoded = Rollout(routed_experts=model.routed_experts).decode_routed_experts(
+            num_layers=model.moe_num_layers, top_k=model.moe_top_k
+        )
         assert decoded.shape == (total_tokens - 1, model.moe_num_layers, model.moe_top_k)
         assert decoded.dtype == np.int32
 
@@ -80,7 +82,9 @@ async def test_multi_turn_agent_with_tools(routed_experts_model, calculator_tool
 
     if model.moe_num_layers and model.moe_top_k:
         total_tokens = len(model.token_manager.token_ids)
-        decoded = decode_routed_experts(experts_turn2, num_layers=model.moe_num_layers, top_k=model.moe_top_k)
+        decoded = Rollout(routed_experts=experts_turn2).decode_routed_experts(
+            num_layers=model.moe_num_layers, top_k=model.moe_top_k
+        )
         assert decoded.shape == (total_tokens - 1, model.moe_num_layers, model.moe_top_k)
 
 

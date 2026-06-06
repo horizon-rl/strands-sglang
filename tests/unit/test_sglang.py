@@ -293,7 +293,7 @@ class TestStreamRoutedExperts:
 
     def test_decode_routed_experts_util(self):
         """decode_routed_experts() stitches per-turn slices into a shaped numpy array."""
-        from strands_sglang import decode_routed_experts
+        from strands_sglang import Rollout
 
         num_layers, top_k, total_rows = 4, 2, 4
         experts = np.arange(total_rows * num_layers * top_k, dtype=np.int32)
@@ -304,7 +304,7 @@ class TestStreamRoutedExperts:
             pybase64.b64encode(experts[split:].tobytes()).decode("ascii"),
         ]
 
-        decoded = decode_routed_experts(slices, num_layers=num_layers, top_k=top_k)
+        decoded = Rollout(routed_experts=slices).decode_routed_experts(num_layers=num_layers, top_k=top_k)
         assert decoded.shape == (total_rows, num_layers, top_k)
         np.testing.assert_array_equal(decoded.ravel(), experts)
 
@@ -348,7 +348,7 @@ class TestStreamRoutedExperts:
         so routed_experts holds one base64 slice per turn and stitching them reconstructs
         the full trajectory.
         """
-        from strands_sglang import decode_routed_experts
+        from strands_sglang import Rollout
 
         # 1 layer, 1 top_k so each int32 is one routing row
         blob1 = pybase64.b64encode(np.array([10, 11, 12, 13], dtype=np.int32).tobytes()).decode("ascii")
@@ -382,5 +382,5 @@ class TestStreamRoutedExperts:
         assert model.routed_experts == [blob1, blob2]
 
         # Stitching the per-turn slices yields the full-trajectory routing
-        decoded = decode_routed_experts(model.routed_experts, num_layers=1, top_k=1)
+        decoded = Rollout(routed_experts=model.routed_experts).decode_routed_experts(num_layers=1, top_k=1)
         np.testing.assert_array_equal(decoded.ravel(), np.array([10, 11, 12, 13, 20, 21], dtype=np.int32))

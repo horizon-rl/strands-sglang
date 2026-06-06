@@ -20,10 +20,6 @@ import logging
 from functools import cache
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-import pybase64
-from numpy.typing import NDArray
-
 from .client import DEFAULT_MAX_CONNECTIONS, SGLangClient
 
 logger = logging.getLogger(__name__)
@@ -84,22 +80,3 @@ def get_tokenizer(tokenizer_path: str) -> PreTrainedTokenizerBase:
     from transformers import AutoTokenizer
 
     return AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
-
-
-def decode_routed_experts(routed_experts: list[str], num_layers: int, top_k: int) -> NDArray[np.int32]:
-    """Decode and stitch per-turn routed-experts slices into a shaped numpy array.
-
-    `SGLangModel.routed_experts` is a list of base64 slices, one per turn, each
-    captured via `routed_experts_start_len` to cover only that turn's new tokens.
-    Concatenating their int32 bytes yields the full trajectory's routing.
-
-    Args:
-        routed_experts: Per-turn base64 strings of int32 expert indices from SGLang.
-        num_layers: Number of MoE layers in the model.
-        top_k: Number of experts selected per token (moe_router_topk).
-
-    Returns:
-        Array of shape `(total_tokens - 1, num_layers, top_k)`.
-    """
-    buffer = b"".join(pybase64.b64decode(s.encode("ascii")) for s in routed_experts)
-    return np.frombuffer(buffer, dtype=np.int32).reshape(-1, num_layers, top_k)
