@@ -139,9 +139,9 @@ class TestTokenizePromptMessages:
     """Tests for tokenize_prompt_messages error handling."""
 
     def test_no_new_messages_raises(self, model):
-        """Raises RuntimeError when message_count matches input length."""
-        model.token_manager.add_prompt([1, 2, 3])
-        model.message_count = 2
+        """Raises RuntimeError when processed_messages matches input length."""
+        model.rollout.add_prompt([1, 2, 3])
+        model.processed_messages = 2
 
         messages = [
             {"role": "user", "content": [{"text": "Hello"}]},
@@ -289,7 +289,7 @@ class TestStreamRoutedExperts:
         async for _ in model.stream(messages):
             pass
 
-        assert model.routed_experts == [encoded]
+        assert model.rollout.routed_experts == [encoded]
 
     def test_decode_routed_experts_util(self):
         """decode_routed_experts() stitches per-turn slices into a shaped numpy array."""
@@ -348,8 +348,6 @@ class TestStreamRoutedExperts:
         so routed_experts holds one base64 slice per turn and stitching them reconstructs
         the full trajectory.
         """
-        from strands_sglang import Rollout
-
         # 1 layer, 1 top_k so each int32 is one routing row
         blob1 = pybase64.b64encode(np.array([10, 11, 12, 13], dtype=np.int32).tobytes()).decode("ascii")
         blob2 = pybase64.b64encode(np.array([20, 21], dtype=np.int32).tobytes()).decode("ascii")
@@ -366,7 +364,7 @@ class TestStreamRoutedExperts:
         messages = [{"role": "user", "content": [{"text": "hi"}]}]
         async for _ in model.stream(messages):
             pass
-        assert model.routed_experts == [blob1]
+        assert model.rollout.routed_experts == [blob1]
         assert client.generate.call_args_list[0].kwargs["routed_experts_start_len"] == 0
 
         # Turn 2: append the assistant reply + a new user message
@@ -379,8 +377,8 @@ class TestStreamRoutedExperts:
 
         # Turn 1 left 7 tokens (5 prompt + 2 response) → start_len = max(0, 7 - 1) = 6
         assert client.generate.call_args_list[1].kwargs["routed_experts_start_len"] == 6
-        assert model.routed_experts == [blob1, blob2]
+        assert model.rollout.routed_experts == [blob1, blob2]
 
         # Stitching the per-turn slices yields the full-trajectory routing
-        decoded = Rollout(routed_experts=model.routed_experts).decode_routed_experts(num_layers=1, top_k=1)
+        decoded = model.rollout.decode_routed_experts(num_layers=1, top_k=1)
         np.testing.assert_array_equal(decoded.ravel(), np.array([10, 11, 12, 13, 20, 21], dtype=np.int32))

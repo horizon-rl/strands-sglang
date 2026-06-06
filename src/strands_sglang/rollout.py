@@ -23,27 +23,24 @@ from pydantic import BaseModel, Field
 
 
 class Rollout(BaseModel):
-    """Rollout as a token-level trajectory for token-in/token-out (TITO) training.
+    """A `Rollout` instance tracks full token-level trajectory and metadata for token-in/token-out (TITO) training.
 
     Attributes:
         token_ids: Flat token IDs for the whole rollout.
-        loss_mask: Flat per-token mask, aligned with `token_ids`. 0 for prompt tokens
-            (system, user, tool results); 1 for response tokens (model output).
+        loss_mask: Flat per-token mask, aligned with `token_ids`. `0` for prompt tokens
+            (system, user, tool results); `1` for response tokens (model output).
         logprobs: Flat per-token log probabilities, aligned with `token_ids`.
             `logprobs[0]` is `None` — the first token has no predecessor to score.
-        routed_experts: One base64 slice per turn (each captured via
-            `routed_experts_start_len` to cover only that turn's new tokens). Decoded
-            and stitched by `decode_routed_experts()`; kept encoded so the trajectory
-            stays JSON-serializable and the consumer owns the numpy decode.
-        segment_info: `(is_output, length)` per appended segment, in order. During an
-            agent loop segments alternate PROMPT/RESPONSE: prompt (initial) -> response
-            -> prompt (tool result) -> response -> ...
+        routed_experts: List of base64 encoded routed experts, one per turn.
+        image_data: List of base64 encoded image data URLs throughout the rollout.
+        segment_info: `(is_output, length)` per appended segment, in order.
     """
 
     token_ids: list[int] = Field(default_factory=list)
     loss_mask: list[int] = Field(default_factory=list)
     logprobs: list[float | None] = Field(default_factory=list)
     routed_experts: list[str] = Field(default_factory=list)
+    image_data: list[str] = Field(default_factory=list)
     segment_info: list[tuple[bool, int]] = Field(default_factory=list)
 
     def _add_segment(self, token_ids: list[int], logprobs: list[float | None] | None, *, is_output: bool) -> None:
