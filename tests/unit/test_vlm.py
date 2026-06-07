@@ -196,11 +196,11 @@ class TestImageAccumulation:
         # First turn: one image
         messages1 = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
         vlm_model.tokenize_prompt_messages(messages1, system_prompt=None, is_multimodal=True)
-        assert len(vlm_model.image_data) == 1
+        assert len(vlm_model.rollout.image_data) == 1
 
         # Second turn: simulate assistant response + tool result with screenshot
-        vlm_model.token_manager.add_prompt([10, 20, 30])
-        vlm_model.message_count = 2  # len([user_msg]) + 1 after first generation
+        vlm_model.rollout.add_prompt([10, 20, 30])
+        vlm_model.processed_messages = 2  # len([user_msg]) + 1 after first generation
         messages2 = [
             {"role": "user", "content": [{"text": "describe"}, _image_block()]},
             {
@@ -224,15 +224,15 @@ class TestImageAccumulation:
             },
         ]
         vlm_model.tokenize_prompt_messages(messages2, system_prompt=None, is_multimodal=True)
-        assert len(vlm_model.image_data) == 2  # 1 from first + 1 from second (tool result image)
+        assert len(vlm_model.rollout.image_data) == 2  # 1 from first + 1 from second (tool result image)
 
     def test_reset_clears_accumulated_images(self, vlm_model, mock_tokenizer):
         messages = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
         vlm_model.tokenize_prompt_messages(messages, system_prompt=None, is_multimodal=True)
-        assert len(vlm_model.image_data) > 0
+        assert len(vlm_model.rollout.image_data) > 0
 
         vlm_model.reset()
-        assert vlm_model.image_data == []
+        assert vlm_model.rollout.image_data == []
 
 
 # ---------------------------------------------------------------------------

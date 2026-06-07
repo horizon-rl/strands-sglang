@@ -56,7 +56,7 @@ async def test_max_tool_iters(model):
     assert limiter.tool_iter_count == 1
 
     # Trajectory should be clean: prompt + response segments, consistent lengths
-    tm = model.token_manager
+    tm = model.rollout
     assert len(tm) > 0
     assert len(tm.token_ids) == len(tm.loss_mask) == len(tm.logprobs)
     response_segments = sum(1 for is_output, _ in tm.segment_info if is_output)

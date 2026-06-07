@@ -42,7 +42,7 @@ from typing_extensions import Unpack, override
 
 from .client import SGLangClient
 from .exceptions import SGLangContextLengthError, SGLangThrottledError
-from .token import TokenManager
+from .rollout import Rollout
 from .tool_parsers import HermesToolParser, ToolParser
 
 logger = logging.getLogger(__name__)
@@ -60,9 +60,9 @@ class SGLangModel(Model):
         >>> tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B")
         >>> model = SGLangModel(client=client, tokenizer=tokenizer)
         >>> # After generation:
-        >>> model.token_manager.token_ids    # Full token trajectory
-        >>> model.token_manager.loss_mask    # Boolean mask for loss computation
-        >>> model.token_manager.logprobs     # Log probabilities
+        >>> model.rollout.token_ids    # Full token trajectory
+        >>> model.rollout.loss_mask    # Boolean mask for loss computation
+        >>> model.rollout.logprobs     # Log probabilities
     """
 
     class SGLangConfig(TypedDict, total=False):
@@ -99,23 +99,17 @@ class SGLangModel(Model):
         }
 
         # State tracking (this makes SGLangModel stateful)
-        self.token_manager = TokenManager()
-        # Per-turn base64 routing slices (each covers this turn's new tokens via
-        # routed_experts_start_len). decode_routed_experts() stitches them together.
-        self.routed_experts: list[str] = []
-        self.message_count: int = 0
+        self.rollout = Rollout()  # token-in/token-out rollout tracker
+        self.processed_messages: int = 0  # multi-turn message cursor
         self.tool_parse_errors: dict[str, int] = {}  # per-tool parse error count
-        self.image_data: list[str] = []  # accumulated image data URLs (VLM only)
 
         logger.debug("initialized with config: %s", self.config)
 
     def reset(self) -> None:
         """Reset all state for a new episode."""
-        self.token_manager.reset()
-        self.message_count = 0
+        self.rollout = Rollout()
+        self.processed_messages = 0
         self.tool_parse_errors = {}
-        self.image_data = []
-        self.routed_experts = []
 
     # -------------------------------------------------------------------------
     # Model interface implementation
@@ -267,10 +261,10 @@ class SGLangModel(Model):
                 for part in msg["content"]:
                     match part.get("type"):
                         case "image":
-                            self.image_data.append(part["image"])
+                            self.rollout.image_data.append(part["image"])
 
         # First call: full prompt with tools
-        if self.message_count == 0:
+        if self.processed_messages == 0:
             hf_messages = self.format_messages(messages, system_prompt, is_multimodal=is_multimodal)
             update_multimodal_data(hf_messages)
             tools = self.format_tool_specs(tool_specs) if tool_specs else None
@@ -283,9 +277,9 @@ class SGLangModel(Model):
             return list(self.tokenizer.encode(prompt, add_special_tokens=False))
 
         # Incremental: fake prefix subtraction with message_separator bridge
-        if len(messages) > self.message_count:
+        if len(messages) > self.processed_messages:
             new_hf_messages = self.format_messages(
-                self.sort_tool_results(messages[self.message_count :]), is_multimodal=is_multimodal
+                self.sort_tool_results(messages[self.processed_messages :]), is_multimodal=is_multimodal
             )
             update_multimodal_data(new_hf_messages)
             fake_messages = [
@@ -309,7 +303,9 @@ class SGLangModel(Model):
             prompt = self.message_separator + full_prompt[len(prefix_prompt) :]
             return list(self.tokenizer.encode(prompt, add_special_tokens=False))
 
-        raise RuntimeError(f"No new messages to tokenize (message_count={self.message_count}, got {len(messages)})")
+        raise RuntimeError(
+            f"No new messages to tokenize (processed_messages={self.processed_messages}, got {len(messages)})"
+        )
 
     # -------------------------------------------------------------------------
     # Generation
@@ -340,8 +336,8 @@ class SGLangModel(Model):
             tool_specs=tool_specs,
             is_multimodal=is_multimodal,
         )
-        # Tracking token IDs in token_manager to ensure the token-in feature
-        input_ids = self.token_manager.token_ids + new_input_ids
+        # Tracking token IDs in the rollout to ensure the token-in feature
+        input_ids = self.rollout.token_ids + new_input_ids
 
         # Assistant message start
         yield {"messageStart": {"role": "assistant"}}
@@ -353,11 +349,11 @@ class SGLangModel(Model):
                 input_ids=input_ids,
                 sampling_params=sampling_params,
                 return_logprob=return_logprob,
-                logprob_start_len=max(0, len(self.token_manager.token_ids) - 1) if return_logprob else None,
+                logprob_start_len=max(0, len(self.rollout) - 1) if return_logprob else None,
                 return_routed_experts=return_routed_experts,
                 # Capture only this turn's new tokens (server crops to [start_len, seqlen - 1)); mirrors logprob_start_len.
-                routed_experts_start_len=max(0, len(self.token_manager.token_ids) - 1) if return_routed_experts else 0,
-                image_data=self.image_data or None,
+                routed_experts_start_len=max(0, len(self.rollout) - 1) if return_routed_experts else 0,
+                image_data=self.rollout.image_data or None,
             )
 
             # Extract response data
@@ -376,19 +372,19 @@ class SGLangModel(Model):
             raise ModelThrottledException(f"Service throttled (status={e.status}): {e.body}") from e
 
         # Update token trajectory
-        self.token_manager.add_prompt(
+        self.rollout.add_prompt(
             token_ids=new_input_ids,
             logprobs=[e[0] for e in input_token_logprobs[-len(new_input_ids) :]] if input_token_logprobs else None,
         )
-        self.token_manager.add_response(
+        self.rollout.add_response(
             token_ids=output_ids,
             logprobs=[e[0] for e in output_token_logprobs] if output_token_logprobs else None,
         )
         # Collect this turn's routing slice; decode_routed_experts() stitches the per-turn slices.
         if return_routed_experts:
-            self.routed_experts.append(meta_info["routed_experts"])  # KeyError if server omits it
-        # Update message count
-        self.message_count = len(messages) + 1
+            self.rollout.add_routed_experts(meta_info["routed_experts"])  # KeyError if server omits it
+        # Advance the processed-messages cursor (+1 for this turn's assistant response, already in the rollout)
+        self.processed_messages = len(messages) + 1
 
         # Assistant message content stop
         yield {"contentBlockStop": {}}
@@ -434,7 +430,7 @@ class SGLangModel(Model):
         """Structured output via SGLang's `json_schema` constrained decoding.
 
         Notes:
-            Does not update `token_manager` (no token trajectory tracking).
+            Does not update `rollout` (no token trajectory tracking).
         """
         # Convert Pydantic model to JSON schema string
         json_schema = json.dumps(output_model.model_json_schema())

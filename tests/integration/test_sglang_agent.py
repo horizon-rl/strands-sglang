@@ -60,8 +60,8 @@ def knowledge_base(query: str) -> str:
 
 def assert_trajectory_valid(model, min_response_segments: int = 1):
     """Assert token trajectory is valid: segments, loss_mask, logprobs, consistency."""
-    tm = model.token_manager
-    assert len(tm) > 0, "Token manager should have tokens"
+    tm = model.rollout
+    assert len(tm) > 0, "Rollout should have tokens"
     assert len(tm.token_ids) == len(tm.loss_mask) == len(tm.logprobs), "Array lengths must match"
     assert sum(length for _, length in tm.segment_info) == len(tm), "Segment lengths must sum to total"
 
@@ -74,11 +74,14 @@ def assert_trajectory_valid(model, min_response_segments: int = 1):
         f"Expected >= {min_response_segments} response segments, got {len(response_segments)}"
     )
 
-    # Response tokens should have logprobs
-    for seg_idx, _ in response_segments:
-        segment_tokens = tm.segments[seg_idx]
-        logprobs = [t.logprob for t in segment_tokens]
-        assert any(lp is not None for lp in logprobs), f"Response segment {seg_idx} should have logprobs"
+    # Response tokens should have logprobs (slice the flat logprobs by segment offset)
+    offsets, acc = [], 0
+    for _, length in tm.segment_info:
+        offsets.append(acc)
+        acc += length
+    for seg_idx, length in response_segments:
+        seg_logprobs = tm.logprobs[offsets[seg_idx] : offsets[seg_idx] + length]
+        assert any(lp is not None for lp in seg_logprobs), f"Response segment {seg_idx} should have logprobs"
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +123,7 @@ async def test_sequential_tool_chain(model):
     assert_trajectory_valid(model, min_response_segments=2)
 
     # Segments should alternate: prompt, response, prompt (tool result), response, ...
-    for i, (is_resp, _) in enumerate(model.token_manager.segment_info):
+    for i, (is_resp, _) in enumerate(model.rollout.segment_info):
         if i == 0:
             assert not is_resp, "First segment must be prompt"
         # After the first, should alternate (though consecutive prompts are possible)
@@ -179,29 +182,29 @@ async def test_multi_turn(model):
 
     # -- Turn 1 --
     await agent.invoke_async("What is 12 * 15? Use calculator.")
-    tokens_t1 = len(model.token_manager)
-    segments_t1 = len(model.token_manager.segments)
-    mask_t1 = model.token_manager.loss_mask.copy()
+    tokens_t1 = len(model.rollout)
+    segments_t1 = len(model.rollout.segment_info)
+    mask_t1 = model.rollout.loss_mask.copy()
     assert_trajectory_valid(model)
 
     # -- Turn 2 (no reset — accumulates) --
     await agent.invoke_async("Now add 50 to that result. Use calculator.")
-    tokens_t2 = len(model.token_manager)
-    segments_t2 = len(model.token_manager.segments)
+    tokens_t2 = len(model.rollout)
+    segments_t2 = len(model.rollout.segment_info)
 
     # Tokens and segments must grow
     assert tokens_t2 > tokens_t1, f"Tokens should grow: {tokens_t1} -> {tokens_t2}"
     assert segments_t2 > segments_t1, f"Segments should grow: {segments_t1} -> {segments_t2}"
 
     # Previous token masks preserved (first N tokens unchanged)
-    assert model.token_manager.loss_mask[:tokens_t1] == mask_t1, "Previous loss_mask must be preserved"
+    assert model.rollout.loss_mask[:tokens_t1] == mask_t1, "Previous loss_mask must be preserved"
 
     assert_trajectory_valid(model, min_response_segments=2)
 
     # -- Reset + Turn 3 (fresh trajectory) --
     model.reset()
-    assert len(model.token_manager) == 0
-    assert model.token_manager.segments == []
+    assert len(model.rollout) == 0
+    assert model.rollout.segment_info == []
 
     agent2 = Agent(
         model=model,
@@ -211,5 +214,5 @@ async def test_multi_turn(model):
     await agent2.invoke_async("What is 99 + 1? Use calculator.")
 
     # Fresh trajectory — should be much smaller than accumulated
-    assert len(model.token_manager) < tokens_t2, "Reset trajectory should be smaller than accumulated"
+    assert len(model.rollout) < tokens_t2, "Reset trajectory should be smaller than accumulated"
     assert_trajectory_valid(model)

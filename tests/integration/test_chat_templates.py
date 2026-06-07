@@ -197,11 +197,11 @@ class TestChatTemplate:
         assert tokens == expected
 
         # 3. Multi-turn incremental text is suffix of full conversation
-        model.token_manager.add_prompt(tokens)
-        model.token_manager.add_response([0])  # dummy response
-        model.message_count = len(_FIRST_TURN) + 1  # +1 for assistant response
+        model.rollout.add_prompt(tokens)
+        model.rollout.add_response([0])  # dummy response
+        model.processed_messages = len(_FIRST_TURN) + 1  # +1 for assistant response
 
-        incremental_text = _compute_incremental_text(model, _MULTI_TURN, model.message_count)
+        incremental_text = _compute_incremental_text(model, _MULTI_TURN, model.processed_messages)
         hf_all = model.format_messages(_MULTI_TURN, system_prompt=SYSTEM_PROMPT)
         full_text = model.tokenizer.apply_chat_template(
             conversation=hf_all, add_generation_prompt=True, **model._chat_template_kwargs
@@ -213,17 +213,16 @@ class TestChatTemplate:
         )
 
         # 4. Tool result incremental text is suffix of full conversation
-        model.token_manager.reset()
-        model.message_count = 0
+        model.reset()
         first_tokens = model.tokenize_prompt_messages(_WITH_TOOL_RESULT[:1], system_prompt=SYSTEM_PROMPT)
-        model.token_manager.add_prompt(first_tokens)
-        model.token_manager.add_response([0])
-        model.message_count = len(_WITH_TOOL_RESULT[:1]) + 1
+        model.rollout.add_prompt(first_tokens)
+        model.rollout.add_response([0])
+        model.processed_messages = len(_WITH_TOOL_RESULT[:1]) + 1
 
         if model_id == "MiniMaxAI/MiniMax-M2.5":
             pytest.xfail("MiniMax template rejects tool result without preceding assistant tool_call")
 
-        incremental_text = _compute_incremental_text(model, _WITH_TOOL_RESULT, model.message_count)
+        incremental_text = _compute_incremental_text(model, _WITH_TOOL_RESULT, model.processed_messages)
         hf_all = model.format_messages(_WITH_TOOL_RESULT, system_prompt=SYSTEM_PROMPT)
         full_text = model.tokenizer.apply_chat_template(
             conversation=hf_all, add_generation_prompt=True, **model._chat_template_kwargs
