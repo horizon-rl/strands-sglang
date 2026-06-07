@@ -61,7 +61,7 @@ async def test_vlm_multi_turn(vlm_model):
     first_response = "".join(text_deltas)
 
     # Token trajectory: prompt + response segments with correct loss mask
-    tm = vlm_model.token_manager
+    tm = vlm_model.rollout
     tokens_after_t1 = len(tm)
     assert tokens_after_t1 > 0
     segments = tm.segment_info
@@ -69,11 +69,11 @@ async def test_vlm_multi_turn(vlm_model):
     assert segments[1][0] is True  # response
     prompt_len = segments[0][1]
     assert all(m == 0 for m in tm.loss_mask[:prompt_len])
-    assert any(t.logprob is not None for t in tm.tokens if t.loss_mask)
+    assert any(lp is not None for lp, m in zip(tm.logprobs, tm.loss_mask, strict=True) if m)
 
     # image_data: 1 image so far
-    assert len(vlm_model.image_data) == 1
-    assert vlm_model.image_data[0].startswith("data:image/png;base64,")
+    assert len(vlm_model.rollout.image_data) == 1
+    assert vlm_model.rollout.image_data[0].startswith("data:image/png;base64,")
 
     # -- Turn 2: text-only follow-up --
     messages.append({"role": "assistant", "content": [{"text": first_response}]})
@@ -86,7 +86,7 @@ async def test_vlm_multi_turn(vlm_model):
 
     tokens_after_t2 = len(tm)
     assert tokens_after_t2 > tokens_after_t1
-    assert len(vlm_model.image_data) == 1  # no new images
+    assert len(vlm_model.rollout.image_data) == 1  # no new images
 
     # -- Turn 3: another image --
     messages.append({"role": "assistant", "content": [{"text": second_response}]})
@@ -97,4 +97,4 @@ async def test_vlm_multi_turn(vlm_model):
 
     tokens_after_t3 = len(tm)
     assert tokens_after_t3 > tokens_after_t2
-    assert len(vlm_model.image_data) == 2  # red + blue
+    assert len(vlm_model.rollout.image_data) == 2  # red + blue

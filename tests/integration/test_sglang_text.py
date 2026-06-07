@@ -39,7 +39,7 @@ async def test_stream_generation(model):
     assert usage["totalTokens"] == usage["inputTokens"] + usage["outputTokens"]
 
     # Token trajectory: prompt + response segments, consistent lengths
-    tm = model.token_manager
+    tm = model.rollout
     assert len(tm) > 0
     assert len(tm.token_ids) == len(tm.loss_mask) == len(tm.logprobs)
     segments = tm.segment_info
@@ -82,7 +82,7 @@ async def test_multi_turn_tool_use(model, calculator_tool):
     assert len(content_deltas) > 0, "Model should generate response after tool result"
 
     # Token trajectory: ≥4 segments (prompt, response, tool-result prompt, response)
-    tm = model.token_manager
+    tm = model.rollout
     segment_info = tm.segment_info
     assert len(segment_info) >= 4, f"Expected >=4 segments, got {len(segment_info)}"
     assert sum(1 for is_resp, _ in segment_info if is_resp) >= 2
@@ -90,10 +90,12 @@ async def test_multi_turn_tool_use(model, calculator_tool):
     # logprob_start_len regression: no None logprobs after segment 0
     # Segment 0 (initial prompt) may have None for BOS token — that's expected.
     # Segments 1+ must have no None logprobs.
-    for i, (is_response, _) in enumerate(segment_info):
+    offset = 0
+    for i, (is_response, length) in enumerate(segment_info):
+        segment_logprobs = tm.logprobs[offset : offset + length]
+        offset += length
         if i == 0:
             continue
-        segment_logprobs = [t.logprob for t in tm.segments[i]]
         none_count = sum(1 for lp in segment_logprobs if lp is None)
         seg_type = "Response" if is_response else "Prompt"
         assert none_count == 0, (

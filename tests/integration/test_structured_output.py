@@ -18,8 +18,8 @@ from pydantic import BaseModel
 
 
 async def test_structured_output(model):
-    """Structured output returns valid Pydantic model without updating token_manager."""
-    initial_token_len = len(model.token_manager)
+    """Structured output returns valid Pydantic model without updating rollout."""
+    initial_token_len = len(model.rollout)
 
     class Verdict(BaseModel):
         is_correct: bool
@@ -37,4 +37,4 @@ async def test_structured_output(model):
     assert result.is_correct is False  # 2+2 != 5
     assert len(result.explanation) > 0
     # structured_output is inference-only — no token tracking
-    assert len(model.token_manager) == initial_token_len
+    assert len(model.rollout) == initial_token_len
