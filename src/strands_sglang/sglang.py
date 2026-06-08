@@ -351,7 +351,6 @@ class SGLangModel(Model):
                 return_logprob=return_logprob,
                 logprob_start_len=max(0, len(self.rollout) - 1) if return_logprob else None,
                 return_routed_experts=return_routed_experts,
-                # Capture only this turn's new tokens (server crops to [start_len, seqlen - 1)); mirrors logprob_start_len.
                 routed_experts_start_len=max(0, len(self.rollout) - 1) if return_routed_experts else 0,
                 image_data=self.rollout.image_data or None,
             )
