@@ -80,6 +80,11 @@ class Rollout(BaseModel):
         buffer = b"".join(pybase64.b64decode(s.encode("ascii")) for s in self.routed_experts)
         return np.frombuffer(buffer, dtype=np.int32).reshape(-1, num_layers, top_k)
 
+    @property
+    def initial_prompt_length(self) -> int:
+        """Return the length of the initial prompt."""
+        return self.segment_info[0][1] if self.segment_info else 0
+
     def __len__(self) -> int:
         """Return the total number of tokens."""
         return len(self.token_ids)
