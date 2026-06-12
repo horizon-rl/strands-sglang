@@ -133,10 +133,10 @@ async def main():
     # 3. TITO Data (for RL training)
     # -------------------------------------------------------------------------
     print("\n" + "=" * 60)
-    print("TITO Token Manager State")
+    print("TITO Rollout State")
     print("=" * 60)
 
-    tm = model.token_manager
+    tm = model.rollout
     print(f"  Total tokens:    {len(tm)}")
     print(f"  Segments:        {len(tm.segment_info)}")
     for i, (is_output, length) in enumerate(tm.segment_info):
