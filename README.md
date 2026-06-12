@@ -69,8 +69,8 @@ async def main():
     await agent.invoke_async("What is 25 * 17?")
 
     # SGLangModel captures the full token trajectory for on-policy RL training
-    tm = model.token_manager
-    print(tm.token_ids, tm.loss_mask, tm.logprobs)
+    rollout = model.rollout
+    print(rollout.token_ids, rollout.loss_mask, rollout.logprobs)
 
 asyncio.run(main())
 ```
@@ -80,7 +80,7 @@ asyncio.run(main())
 In principle, Strands-SGLang can be seen as a drop-in agentic rollout service and can be integrated with any RL training framework. A concrete example of training a math coding agent ([ReTool](https://arxiv.org/abs/2504.11536)) is available at [slime/examples/strands_sglang](https://github.com/THUDM/slime/tree/main/examples/strands_sglang).
 
 Some key highlights of adapting Strands-SGLang to any RL framework:
-- Pass tokens and token metadata from `TokenManager` for on-policy rollouts
+- Pass tokens and token metadata from `Rollout` for on-policy rollouts
 - Hook your harness with the built-in `ToolLimiter` (or your own) for controlled rollouts
 - Use a shared `SGLangClient` and HF tokenizer; don't create one instance per rollout
 - Classify the rollout's termination reason properly — it shapes reward and sampling

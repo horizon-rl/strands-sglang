@@ -104,7 +104,7 @@ async def main():
     await agent.invoke_async(problem)
 
     # Check for drift
-    tito_tokens = list(model.token_manager.token_ids)
+    tito_tokens = list(model.rollout.token_ids)
     decoded = tokenizer.decode(tito_tokens)
     re_encoded = tokenizer.encode(decoded, add_special_tokens=False)
 
@@ -138,8 +138,8 @@ async def main():
 
     # Show TITO structure
     print("\n--- TITO Data ---")
-    print(f"Tokens: {len(tito_tokens)}, Outputs: {sum(model.token_manager.loss_mask)}")
-    for i, (is_out, length) in enumerate(model.token_manager.segment_info):
+    print(f"Tokens: {len(tito_tokens)}, Outputs: {sum(model.rollout.loss_mask)}")
+    for i, (is_out, length) in enumerate(model.rollout.segment_info):
         print(f"  Seg {i}: {length:5d} {'Response' if is_out else 'Prompt'}")
 
 

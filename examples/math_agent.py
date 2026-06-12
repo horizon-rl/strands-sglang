@@ -81,9 +81,9 @@ async def main():
     print(f"\n[Input Problem]: {math_500_problem}")
     await agent.invoke_async(math_500_problem)
     print(f"\n[Output Trajectory]: {json.dumps(agent.messages, indent=2)}")
-    if model.token_manager:
+    if model.rollout:
         # Token trajectory
-        print(f"[Output Tokens - Decoded]: {tokenizer.decode(model.token_manager.token_ids)}")
+        print(f"[Output Tokens - Decoded]: {tokenizer.decode(model.rollout.token_ids)}")
 
     # -------------------------------------------------------------------------
     # 3. Access TITO Data
@@ -94,25 +94,25 @@ async def main():
     print("-" * 40)
 
     # Token trajectory
-    token_ids = model.token_manager.token_ids
+    token_ids = model.rollout.token_ids
     print(f"Total tokens: {len(token_ids)}")
 
     # Output mask (True = model output, for loss computation)
-    output_mask = model.token_manager.loss_mask
+    output_mask = model.rollout.loss_mask
     n_output = sum(output_mask)
     n_prompt = len(output_mask) - n_output
     print(f"Prompt tokens: {n_prompt} (loss_mask=False)")
     print(f"Response tokens: {n_output} (loss_mask=True)")
 
     # Log probabilities
-    logprobs = model.token_manager.logprobs
+    logprobs = model.rollout.logprobs
     output_logprobs = [lp for lp, mask in zip(logprobs, output_mask, strict=False) if mask and lp is not None]
     if output_logprobs:
         avg_logprob = sum(output_logprobs) / len(output_logprobs)
         print(f"Average output logprob: {avg_logprob:.4f}")
 
     # Segment info
-    segment_info = model.token_manager.segment_info
+    segment_info = model.rollout.segment_info
     print(f"Segments: {len(segment_info)} (Note: Segment 0 includes the system prompt and the user input)")
     for i, (is_output, length) in enumerate(segment_info):
         seg_type = "Response" if is_output else "Prompt"

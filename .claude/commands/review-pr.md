@@ -11,7 +11,7 @@ The user provides a PR number or URL as $ARGUMENTS. If not provided, ask.
 ### Correctness & Design
 - Does the change correctly implement what it claims?
 - Are there edge cases or error conditions not handled?
-- Is the architecture aligned with the project? (SGLangModel, SGLangClient, TokenManager, ToolParser patterns)
+- Is the architecture aligned with the project? (SGLangModel, SGLangClient, Rollout, ToolParser patterns)
 - Are class/function names consistent with existing conventions?
 
 ### Token Tracking (TITO) Integrity

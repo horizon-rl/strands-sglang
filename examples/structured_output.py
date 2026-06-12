@@ -112,7 +112,7 @@ def fibonacci(n):
     print("\n" + "-" * 40)
     print("TITO Status")
     print("-" * 40)
-    print(f"Token manager length: {len(model.token_manager)} (should be 0 - no TITO for structured output)")
+    print(f"Rollout length: {len(model.rollout)} (should be 0 - no TITO for structured output)")
 
 
 if __name__ == "__main__":
