@@ -144,7 +144,7 @@ class SGLangModel(Model):
             )
         )
         sep = self.tokenizer.encode(probe.split("__M__", 1)[1], add_special_tokens=False)[1:]
-        return self.tokenizer.decode(sep) if sep else ""
+        return str(self.tokenizer.decode(sep)) if sep else ""
 
     @classmethod
     def format_content_block(
