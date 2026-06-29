@@ -75,10 +75,67 @@ class Rollout(BaseModel):
         """Append this turn's base64 routed-experts slice (one `/generate` call covers the turn)."""
         self.routed_experts.append(routed_experts)
 
-    def decode_routed_experts(self, num_layers: int, top_k: int) -> NDArray[np.int32]:
-        """Decode and stitch per-turn routed-experts slices into a shaped numpy array."""
-        buffer = b"".join(pybase64.b64decode(s.encode("ascii")) for s in self.routed_experts)
-        return np.frombuffer(buffer, dtype=np.int32).reshape(-1, num_layers, top_k)
+    def decode_routed_experts(
+        self, num_layers: int, top_k: int, num_tokens: int | None = None
+    ) -> NDArray[np.int32] | None:
+        """Decode the routed-experts capture into a ``[rows, num_layers, top_k]`` array.
+
+        Handles BOTH server behaviors without assuming one:
+
+        - **Per-turn-crop servers** honor ``routed_experts_start_len`` and return only this turn's
+          rows; the per-turn slices must be JOINED to reconstruct the trajectory.
+        - **Full-request servers** ignore ``routed_experts_start_len`` and return routed experts for
+          the WHOLE request on every ``/generate`` call; here the LATEST blob already spans the
+          entire trajectory and joining all blobs would over-count by ~N for an N-hop rollout.
+
+        Disambiguation: when ``num_tokens`` is given (typically ``len(token_ids) - 1``), we pick the
+        interpretation whose row count matches — latest-blob first (full-request server), then
+        join-all (per-turn-crop server). When ``num_tokens`` is NOT given we cannot tell the two
+        apart, so we keep the legacy per-turn-crop contract and JOIN, falling back to the latest
+        blob only if the join does not reshape cleanly. The element width is inferred from the blob
+        size (current sglang emits int32, older builds int8) rather than hardcoded.
+
+        Args:
+            num_layers: MoE layer count (per-token slab depth).
+            top_k: router top-k (per-token slab width).
+            num_tokens: if given, the expected row count. When NEITHER interpretation matches it in
+                either dtype, returns ``None`` so the caller can drop the sample rather than feed
+                misaligned routing into replay. If ``None``, rows are inferred.
+
+        Returns:
+            A ``[rows, num_layers, top_k]`` array, or ``None`` if there is no capture or the blob
+            size is inconsistent with the requested shape.
+        """
+        if not self.routed_experts:
+            return None
+        per_token = num_layers * top_k
+        latest = pybase64.b64decode(self.routed_experts[-1].encode("ascii"))
+        joined = b"".join(pybase64.b64decode(s.encode("ascii")) for s in self.routed_experts)
+
+        def _reshape(raw: bytes, rows: int | None) -> NDArray[np.int32] | None:
+            for dtype in (np.int32, np.int8):
+                itemsize = np.dtype(dtype).itemsize
+                if len(raw) % itemsize != 0:
+                    continue
+                count = len(raw) // itemsize
+                if rows is not None:
+                    if count == rows * per_token:
+                        return np.frombuffer(raw, dtype=dtype).reshape(rows, num_layers, top_k)
+                elif per_token and count % per_token == 0:
+                    return np.frombuffer(raw, dtype=dtype).reshape(-1, num_layers, top_k)
+            return None
+
+        if num_tokens is not None:
+            # num_tokens disambiguates: full-request (latest spans all) vs per-turn-crop (join).
+            candidates = (latest, joined)
+        else:
+            # Ambiguous: keep the legacy per-turn-crop contract (join), fall back to the latest blob.
+            candidates = (joined, latest)
+        for raw in candidates:
+            decoded = _reshape(raw, num_tokens)
+            if decoded is not None:
+                return decoded
+        return None
 
     @property
     def initial_prompt_length(self) -> int:

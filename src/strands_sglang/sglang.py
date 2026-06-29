@@ -379,7 +379,8 @@ class SGLangModel(Model):
             token_ids=output_ids,
             logprobs=[e[0] for e in output_token_logprobs] if output_token_logprobs else None,
         )
-        # Collect this turn's routing slice; decode_routed_experts() stitches the per-turn slices.
+        # Record this turn's routing blob (the server returns experts for the FULL request each call);
+        # decode_routed_experts() reads the latest blob, which spans the whole trajectory.
         if return_routed_experts:
             self.rollout.add_routed_experts(meta_info["routed_experts"])  # KeyError if server omits it
         # Advance the processed-messages cursor (+1 for this turn's assistant response, already in the rollout)

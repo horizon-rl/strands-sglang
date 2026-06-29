@@ -16,8 +16,6 @@
 
 import json
 
-import numpy as np
-
 
 async def test_single_turn_base64_and_decode(routed_experts_model):
     """Single-turn: routed_experts is a list of base64 slices, decode returns correct shape."""
@@ -34,12 +32,15 @@ async def test_single_turn_base64_and_decode(routed_experts_model):
     # JSON-serializable (needed for Ray actor transport)
     json.dumps({"routed_experts": model.rollout.routed_experts})
 
-    # decode_routed_experts returns correct shape
+    # decode_routed_experts returns correct shape. Pass num_tokens so the decode pins the expected
+    # row count (the server returns the full request; decode reads the latest blob).
     if model.moe_num_layers and model.moe_top_k:
         total_tokens = len(model.rollout.token_ids)
-        decoded = model.rollout.decode_routed_experts(num_layers=model.moe_num_layers, top_k=model.moe_top_k)
+        decoded = model.rollout.decode_routed_experts(
+            num_layers=model.moe_num_layers, top_k=model.moe_top_k, num_tokens=total_tokens - 1
+        )
+        assert decoded is not None
         assert decoded.shape == (total_tokens - 1, model.moe_num_layers, model.moe_top_k)
-        assert decoded.dtype == np.int32
 
 
 async def test_multi_turn_agent_with_tools(routed_experts_model, calculator_tool):
@@ -78,7 +79,12 @@ async def test_multi_turn_agent_with_tools(routed_experts_model, calculator_tool
 
     if model.moe_num_layers and model.moe_top_k:
         total_tokens = len(model.rollout.token_ids)
-        decoded = model.rollout.decode_routed_experts(num_layers=model.moe_num_layers, top_k=model.moe_top_k)
+        # Multi-turn: each hop's blob spans the full request; decode reads the latest blob and
+        # pins to num_tokens (the old concat-all path over-counted by ~N hops here).
+        decoded = model.rollout.decode_routed_experts(
+            num_layers=model.moe_num_layers, top_k=model.moe_top_k, num_tokens=total_tokens - 1
+        )
+        assert decoded is not None
         assert decoded.shape == (total_tokens - 1, model.moe_num_layers, model.moe_top_k)
 
 
