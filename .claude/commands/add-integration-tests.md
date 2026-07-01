@@ -7,7 +7,7 @@ The user provides a target as $ARGUMENTS (e.g., a module name, class, or feature
 Follow the existing test style in `tests/integration/`:
 
 - **License header**: Every `.py` file must start with the Apache 2.0 license header (copy from any existing source file)
-- **File naming**: `test_sglang_<focus>.py` for model pipeline tests (e.g., `test_sglang_text.py`, `test_sglang_agent.py`), `test_<feature>.py` for standalone features (e.g., `test_tool_limiter.py`)
+- **File naming**: `test_sglang_<focus>.py` for model pipeline tests (e.g., `test_sglang_text.py`, `test_sglang_agent.py`), `test_<feature>.py` for standalone features (e.g., `test_limiter.py`)
 - **Location**: `tests/integration/`
 - **Async tests**: Use `async def test_*` directly — `asyncio_mode = "auto"` is configured
 - **Shared fixtures**: `conftest.py` provides `sglang_base_url`, `sglang_server_info`, `tokenizer`, `model`, `vlm_model`, `calculator_tool` — use these, don't redefine them
