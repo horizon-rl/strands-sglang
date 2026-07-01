@@ -12,14 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Integration tests for ToolLimiter."""
+"""Integration tests for LoopLimiter."""
 
 import pytest
 from strands import Agent
 from strands.types.exceptions import EventLoopException
 from strands_tools import calculator
 
-from strands_sglang import MaxToolCallsReachedError, MaxToolIterationsReachedError, ToolLimiter
+from strands_sglang import (
+    LoopLimiter,
+    MaxMessagesReachedError,
+    MaxToolCallsReachedError,
+    MaxToolIterationsReachedError,
+)
 
 SYSTEM_PROMPT = """You are a calculator assistant. You MUST use the calculator tool for ALL arithmetic.
 Never compute in your head - always use the calculator tool."""
@@ -44,7 +49,7 @@ def _unwrap_limiter_error(exc_info):
 
 async def test_max_tool_iters(model):
     """max_tool_iters stops agent after N iterations with clean trajectory and resets correctly."""
-    limiter = ToolLimiter(max_tool_iters=1)
+    limiter = LoopLimiter(max_tool_iters=1)
     agent = Agent(model=model, tools=[calculator], system_prompt=SYSTEM_PROMPT, hooks=[limiter])
 
     # Sequential problem needs >= 2 iterations — should stop after 1
@@ -75,7 +80,7 @@ async def test_max_tool_iters(model):
 
 async def test_max_tool_calls(model):
     """max_tool_calls stops agent after N individual calls; call_count >= iter_count."""
-    limiter = ToolLimiter(max_tool_calls=1)
+    limiter = LoopLimiter(max_tool_calls=1)
     agent = Agent(model=model, tools=[calculator], system_prompt=SYSTEM_PROMPT, hooks=[limiter])
 
     with pytest.raises((MaxToolCallsReachedError, EventLoopException)) as exc_info:
@@ -89,7 +94,7 @@ async def test_max_tool_calls(model):
 
 async def test_max_parallel_tool_calls(model):
     """max_parallel_tool_calls cancels excess calls within a single model response."""
-    limiter = ToolLimiter(max_parallel_tool_calls=1, max_tool_iters=5)
+    limiter = LoopLimiter(max_parallel_tool_calls=1, max_tool_iters=5)
     agent = Agent(model=model, tools=[calculator], system_prompt=SYSTEM_PROMPT, hooks=[limiter])
 
     # Multi-calc may trigger parallel calls; limit=1 cancels extras
@@ -109,7 +114,7 @@ async def test_max_parallel_tool_calls(model):
 async def test_both_limits_correct_error_fires(model):
     """When both limits are set, the tighter one fires the correct error type."""
     # Iter-tight: max_tool_iters=1 is tighter than max_tool_calls=100
-    limiter = ToolLimiter(max_tool_iters=1, max_tool_calls=100)
+    limiter = LoopLimiter(max_tool_iters=1, max_tool_calls=100)
     agent = Agent(model=model, tools=[calculator], system_prompt=SYSTEM_PROMPT, hooks=[limiter])
 
     with pytest.raises((MaxToolIterationsReachedError, EventLoopException)) as exc_info:
@@ -118,9 +123,36 @@ async def test_both_limits_correct_error_fires(model):
 
     # Call-tight: max_tool_calls=1 is tighter than max_tool_iters=100
     model.reset()
-    limiter2 = ToolLimiter(max_tool_iters=100, max_tool_calls=1)
+    limiter2 = LoopLimiter(max_tool_iters=100, max_tool_calls=1)
     agent2 = Agent(model=model, tools=[calculator], system_prompt=SYSTEM_PROMPT, hooks=[limiter2])
 
     with pytest.raises((MaxToolCallsReachedError, EventLoopException)) as exc_info:
         await agent2.invoke_async(SEQUENTIAL_PROBLEM)
     assert isinstance(_unwrap_limiter_error(exc_info), MaxToolCallsReachedError)
+
+
+async def test_max_messages(model):
+    """max_messages stops the loop at a message boundary; an exhausted budget raises before generation."""
+    # user(1) -> assistant toolUse(2) -> toolResult(3) >= 3: raises after the first iteration completes
+    limiter = LoopLimiter(max_messages=3)
+    agent = Agent(model=model, tools=[calculator], system_prompt=SYSTEM_PROMPT, hooks=[limiter])
+
+    with pytest.raises((MaxMessagesReachedError, EventLoopException)) as exc_info:
+        await agent.invoke_async(SEQUENTIAL_PROBLEM)
+    assert isinstance(_unwrap_limiter_error(exc_info), MaxMessagesReachedError)
+    assert limiter.message_count == 3
+
+    # Trajectory is clean: ends at the tool result, lengths consistent
+    tm = model.rollout
+    assert len(tm) > 0
+    assert len(tm.token_ids) == len(tm.loss_mask) == len(tm.logprobs)
+    assert sum(1 for is_output, _ in tm.segment_info if is_output) == limiter.tool_iter_count
+
+    # Exhausted budget: the initial user message of a new invocation raises before any generation
+    model.reset()
+    limiter2 = LoopLimiter(max_messages=1)
+    agent2 = Agent(model=model, tools=[calculator], system_prompt=SYSTEM_PROMPT, hooks=[limiter2])
+    with pytest.raises((MaxMessagesReachedError, EventLoopException)) as exc_info:
+        await agent2.invoke_async(SEQUENTIAL_PROBLEM)
+    assert isinstance(_unwrap_limiter_error(exc_info), MaxMessagesReachedError)
+    assert len(model.rollout) == 0  # nothing was generated

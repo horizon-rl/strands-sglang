@@ -34,7 +34,7 @@ from pathlib import Path
 from strands import Agent, tool
 from transformers import AutoTokenizer
 
-from strands_sglang import SGLangModel, ToolLimiter
+from strands_sglang import LoopLimiter, SGLangModel
 from strands_sglang.client import SGLangClient
 from strands_sglang.tool_parsers import HermesToolParser
 
@@ -113,7 +113,7 @@ async def main():
     agent = Agent(
         model=model,
         tools=[read_image],
-        hooks=[ToolLimiter(max_tool_iters=5)],
+        hooks=[LoopLimiter(max_tool_iters=5)],
         system_prompt="",
         callback_handler=None,
     )

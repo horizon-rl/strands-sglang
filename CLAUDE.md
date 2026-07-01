@@ -56,7 +56,7 @@ The package lives in `src/strands_sglang/` with 7 core modules:
 
 **ToolParser** (`tool_parsers/`) - Abstract base with 5 implementations: `HermesToolParser` (Hermes/Qwen JSON), `QwenXMLToolParser` (XML), `GLM4ToolParser` (GLM-4), `KimiK2ToolParser` (special-token sections), and `DeepSeekV32ToolParser` (DSML-prefixed XML). Strict parsing: only catches JSONDecodeError, propagates failures as tool calls with `raw` content for model feedback. Excludes tool calls inside `<think>` blocks. New parsers self-register via `@register_tool_parser` decorator. Base class provides `validate_tokenizer(tokenizer)` hook for parser-tokenizer compatibility checks. `DeepSeekV32ToolParser` auto-sets `skip_special_tokens=False` in sampling_params to preserve DSML tokens in response text.
 
-**ToolLimiter** (`tool_limiter.py`) - Strands hook enforcing tool iteration and/or call limits per invocation. Supports `max_tool_iters` (one iteration = model response with tool calls + execution) and `max_tool_calls` (individual call count). Raises `MaxToolIterationsReachedError` or `MaxToolCallsReachedError`.
+**LoopLimiter** (`limiter.py`) - Strands hook bounding the agent loop. Supports `max_tool_iters` (one iteration = model response with tool calls + execution), `max_tool_calls` (individual call count), `max_parallel_tool_calls` (excess parallel calls cancelled), and `max_messages` (all roles counted, checked only on user-role messages so the loop stops at a complete message boundary; counters accumulate across invocations until `reset()`, bounding total conversation length in multi-turn env loops). Raises `MaxToolIterationsReachedError`, `MaxToolCallsReachedError`, or `MaxMessagesReachedError`, all subclasses of `LoopLimitReachedError`.
 
 ### Key Design Decisions
 

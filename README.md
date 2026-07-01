@@ -81,7 +81,7 @@ In principle, Strands-SGLang can be seen as a drop-in agentic rollout service an
 
 Some key highlights of adapting Strands-SGLang to any RL framework:
 - Pass tokens and token metadata from `Rollout` for on-policy rollouts
-- Hook your harness with the built-in `ToolLimiter` (or your own) for controlled rollouts
+- Hook your harness with the built-in `LoopLimiter` (or your own) for controlled rollouts
 - Use a shared `SGLangClient` and HF tokenizer; don't create one instance per rollout
 - Classify the rollout's termination reason properly — it shapes reward and sampling
 

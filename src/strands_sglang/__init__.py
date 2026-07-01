@@ -23,9 +23,15 @@ from .exceptions import (
     SGLangHTTPError,
     SGLangThrottledError,
 )
+from .limiter import (
+    LoopLimiter,
+    LoopLimitReachedError,
+    MaxMessagesReachedError,
+    MaxToolCallsReachedError,
+    MaxToolIterationsReachedError,
+)
 from .rollout import Rollout
 from .sglang import SGLangModel
-from .tool_limiter import MaxToolCallsReachedError, MaxToolIterationsReachedError, ToolLimiter
 from .tool_parsers import get_tool_parser
 from .utils import get_client, get_client_from_slime_args, get_tokenizer
 
@@ -50,7 +56,9 @@ __all__ = [
     # Tool parsing
     "get_tool_parser",
     # Hooks
-    "ToolLimiter",
+    "LoopLimiter",
+    "LoopLimitReachedError",
     "MaxToolIterationsReachedError",
     "MaxToolCallsReachedError",
+    "MaxMessagesReachedError",
 ]
