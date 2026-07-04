@@ -19,8 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-
-from typing_extensions import override
+from typing import override
 
 from .base import ToolParser, ToolParseResult, register_tool_parser
 

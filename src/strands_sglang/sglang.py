@@ -24,7 +24,9 @@ from typing import (
     Any,
     TypedDict,
     TypeVar,
+    Unpack,
     cast,
+    override,
 )
 
 import pybase64
@@ -38,7 +40,6 @@ from strands.types.exceptions import (
 from strands.types.streaming import StopReason, StreamEvent
 from strands.types.tools import ToolChoice, ToolResultContent, ToolSpec
 from transformers import PreTrainedTokenizerBase
-from typing_extensions import Unpack, override
 
 from .client import SGLangClient
 from .exceptions import SGLangContextLengthError, SGLangThrottledError

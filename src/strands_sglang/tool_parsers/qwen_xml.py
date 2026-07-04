@@ -20,9 +20,7 @@ import json
 import logging
 import re
 import uuid
-from typing import Any
-
-from typing_extensions import override
+from typing import Any, override
 
 from .base import ToolParser, ToolParseResult, register_tool_parser
 
