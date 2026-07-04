@@ -217,7 +217,7 @@ class SGLangClient:
                         # Non-JSON response — treat as retryable error
                         raise SGLangDecodingError(f"Invalid JSON response: {e}") from e
 
-            except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as e:
+            except (TimeoutError, aiohttp.ClientConnectorError) as e:
                 last_error = SGLangConnectionError(str(e))
                 last_error.__cause__ = e
 

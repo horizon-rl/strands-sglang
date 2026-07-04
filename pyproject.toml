@@ -7,7 +7,7 @@ name = "strands-sglang"
 dynamic = ["version"]
 description = "SGLang model provider for Strands Agents SDK with Token-in/Token-out support for agentic RL training."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
 authors = [
     { name = "Yuan He", email = "yuanhe.cs.ai@gmail.com" }
@@ -19,9 +19,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]

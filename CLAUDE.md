@@ -77,7 +77,7 @@ When adding new modules, changing commands, or altering key design patterns, upd
 - mypy for type checking (strict: `disallow_untyped_defs`, `disallow_incomplete_defs`)
 - Conventional commits enforced by pre-commit hook (feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
 - Pre-commit also runs codespell, license header check, mypy, and unit tests
-- Python 3.10+ required
+- Python 3.12+ required
 - asyncio_mode = "auto" for pytest-asyncio, default timeout = 90s
 
 ## Integration Tests with Remote GPU Server
