@@ -1,0 +1,101 @@
+{
+  "repo_notes": [
+    {
+      "content": "strands-sglang is an SGLang model provider for the Strands Agents SDK with Token-In/Token-Out (TITO) support for on-policy agentic RL training: it captures exact token IDs and logprobs during generation without retokenization drift. The package is flat — seven modules under src/strands_sglang/: sglang.py (SGLangModel), client.py (SGLangClient), rollout.py (Rollout), tool_parsers/ (parser registry + implementations), limiter.py (LoopLimiter), exceptions.py, utils.py (cached client/tokenizer factories). Trust the code over any stale in-repo docs: there are exactly FOUR tool parsers — HermesToolParser ('hermes'), QwenXMLToolParser ('qwen_xml'), GLMToolParser ('glm' — the class is GLMToolParser, not GLM4ToolParser), KimiK2ToolParser ('kimi_k2'). DeepSeekV32ToolParser, attach_dsv32_encoding, and the validate_tokenizer hook were all REMOVED in a later simplification refactor — do not document them. ToolLimiter was renamed to LoopLimiter and gained a max_messages limit (errors: MaxToolIterationsReachedError, MaxToolCallsReachedError, MaxMessagesReachedError, all subclassing LoopLimitReachedError). skip_special_tokens defaults to False for all parsers (set once in sglang.py via sampling_params.setdefault). Python 3.12+ required."
+    }
+  ],
+  "pages": [
+    {
+      "title": "Overview",
+      "purpose": "Introduce strands-sglang: an SGLang model provider for the Strands Agents SDK with Token-In/Token-Out (TITO) support for on-policy agentic RL training — capturing exact token IDs and logprobs during generation without retokenization drift, which is critical for accurate gradient computation. Summarize the key design decisions: non-streaming single POST to /generate for RL throughput, incremental tokenization across turns, strict tool parsing with errors propagated for model self-correction, segment-based TITO mirroring multi-turn structure, and VLM support via server-side image token expansion (no torch dependency)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Getting Started",
+      "purpose": "Guide users through installation and running a first agent against an SGLang server",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Installation",
+      "purpose": "Detail installation (pip install -e '.[dev]'), Python 3.12+ requirement, and how to launch an SGLang server locally or reach a remote GPU server via SSH port tunneling",
+      "parent": "Getting Started",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Quick Start Example",
+      "purpose": "Provide a working example: build a shared client and tokenizer with get_client()/get_tokenizer(), construct an SGLangModel, run a Strands Agent against it, and read the TITO trajectory back via model.rollout (token_ids, loss_mask, logprobs)",
+      "parent": "Getting Started",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "SGLangModel",
+      "purpose": "Document sglang.py: SGLangModel implementing the Strands Model interface with keyword-only client and tokenizer, the nested SGLangConfig TypedDict (sampling_params, return_logprob, enable_thinking) with update_config/get_config, message formatting via HuggingFace chat templates (format_messages/format_content_block, apply_chat_template), the non-streaming single POST to /generate, incremental tokenization (first call tokenizes the full prompt, subsequent calls only new messages with a message_separator prepended), tool_parser injection (default HermesToolParser), reset() re-initializing the Rollout, skip_special_tokens defaulting to False in sampling_params, and multimodal support auto-detected via the is_multimodal cached_property (checks PretrainedConfig for vision_config) with base64 image_data forwarded to the server for image token expansion",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "TITO Rollout",
+      "purpose": "Document rollout.py: the Rollout Pydantic model for segment-based token accumulation — add_prompt() appends loss_mask=0 segments (system, user, tool results) and add_response() appends loss_mask=1 segments (model output), with _add_segment() as the single maintainer of the cross-field length invariant (token_ids/loss_mask/logprobs stay equal length); the flat token_ids/loss_mask/logprobs fields, segment_info as (is_output, length) per segment, the initial_prompt_length property, falsy __len__ when empty, routed-experts tracking (add_routed_experts()/decode_routed_experts()), the image_data list, and how SGLangModel exposes the instance as model.rollout for RL training frameworks to consume",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "SGLangClient, Errors, and Shared Factories",
+      "purpose": "Document client.py, exceptions.py, and utils.py together: SGLangClient, the async aiohttp HTTP client with connection pooling, lazy session creation, and aggressive retry (max_retries=60 by default, aligned with the slime RL framework); centralized error classification in _classify_http_error() mapping HTTP responses to the exception hierarchy rooted at SGLangClientError (SGLangHTTPError base, SGLangContextLengthError for 400 + length patterns, SGLangThrottledError for 429/503, SGLangConnectionError for connection failures, SGLangDecodingError for non-JSON responses) with 401/403/404 and context-length 400 non-retryable — these exceptions are the contract between client and model, so the model layer never inspects raw status codes; and the lru_cache-backed factories in utils.py (get_client(), get_client_from_slime_args(), get_tokenizer()) that share client and tokenizer instances across RL workers without explicit lifecycle management",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Tool Parsers",
+      "purpose": "Document the tool_parsers/ package: the abstract ToolParser base and ToolParseResult in base.py, the TOOL_PARSER_REGISTRY populated by the @register_tool_parser decorator with get_tool_parser() lookup, and the four registered implementations — HermesToolParser ('hermes', Hermes/Qwen JSON), QwenXMLToolParser ('qwen_xml', XML), GLMToolParser ('glm', GLM-4), KimiK2ToolParser ('kimi_k2', special-token sections). Cover the strict-parsing philosophy for RL: only JSONDecodeError is caught, malformed calls propagate as tool calls with raw content so the model can self-correct, and tool calls inside <think> blocks are excluded to avoid parsing draft calls from reasoning",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "LoopLimiter",
+      "purpose": "Document limiter.py: the LoopLimiter Strands hook bounding the agent loop with max_tool_iters (one iteration = model response with tool calls + execution), max_tool_calls (individual call count), max_parallel_tool_calls (excess parallel calls cancelled), and max_messages (all roles counted, checked only on user-role messages so the loop stops at a complete message boundary; counters accumulate across invocations until reset(), bounding total conversation length in multi-turn environment loops); the error hierarchy — MaxToolIterationsReachedError, MaxToolCallsReachedError, MaxMessagesReachedError, all subclasses of LoopLimitReachedError",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "RL Training Integration",
+      "purpose": "Explain how strands-sglang plugs into on-policy RL training: fresh SGLangModel per rollout for clean TITO state, reading token_ids/loss_mask/logprobs from model.rollout after an agent run, segment structure matching multi-turn conversations for loss masking, get_client_from_slime_args() for slime-based training setups, retry behavior tuned to slime's conventions, and how downstream frameworks (e.g. strands-env) consume the Rollout for training",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    }
+  ]
+}
