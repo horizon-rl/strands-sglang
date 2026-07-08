@@ -44,17 +44,17 @@ pytest tests/integration/ -v --sglang-base-url=http://localhost:30000
 
 The package lives in `src/strands_sglang/` with 7 core modules:
 
-**SGLangModel** (`sglang.py`) - Main entry point implementing the Strands `Model` interface. Requires `client` and `tokenizer` (keyword-only). Formats messages using HuggingFace chat templates (`apply_chat_template()`), calls SGLang's `/generate` endpoint (non-streaming by design for RL throughput), tracks TITO trajectory, and parses tool calls. VLM support is auto-detected via `cached_property` `is_multimodal` (checks `PretrainedConfig` for `vision_config`, mirroring SGLang's logic). When multimodal, accumulates `image_data` (base64 data URLs) and forwards them to SGLang — the server handles image token expansion. Configuration via `SGLangConfig` TypedDict (sampling_params, return_logprob, enable_thinking).
+**SGLangModel** (`sglang.py`) - Main entry point implementing the Strands `Model` interface. Requires `client` and `tokenizer` (keyword-only). Formats messages using HuggingFace chat templates (`apply_chat_template()`), calls SGLang's `/generate` endpoint (non-streaming by design for RL throughput), tracks TITO trajectory, and parses tool calls. VLM support is auto-detected server-side via `SGLangClient.is_multimodal()` (queries `/get_model_info` for `has_image_understanding`, cached after the first call). When multimodal, accumulates `image_data` (base64 data URLs) and forwards them to SGLang — the server handles image token expansion. Configuration via `SGLangConfig` TypedDict (sampling_params, return_logprob, return_routed_experts, enable_thinking).
 
 **SGLangClient** (`client.py`) - Async HTTP client using aiohttp with connection pooling and aggressive retry (60 attempts by default, aligned with slime RL framework). All error classification is centralized in `_classify_http_error()`, which maps HTTP responses to custom exceptions (`SGLangContextLengthError`, `SGLangThrottledError`, etc.). Non-retryable errors: 401, 403, 404, context-length 400. Uses lazy session creation to avoid aiohttp's event-loop warnings.
 
-**Utilities** (`utils.py`) - `lru_cache`-backed factories for shared client and tokenizer instances: `get_client()`, `get_client_from_slime_args()`, `get_tokenizer()`. Ensures connection pooling and tokenizer reuse across RL workers without explicit lifecycle management. Also provides `attach_dsv32_encoding(tokenizer)` to monkey-patch a tokenizer's chat template for DeepSeek-V3.2 support.
+**Utilities** (`utils.py`) - `lru_cache`-backed factories for shared client and tokenizer instances: `get_client()`, `get_client_from_slime_args()`, `get_tokenizer()`. Ensures connection pooling and tokenizer reuse across RL workers without explicit lifecycle management.
 
 **Exceptions** (`exceptions.py`) - Custom exception hierarchy rooted at `SGLangClientError`. HTTP errors are classified into `SGLangHTTPError` (base), `SGLangContextLengthError` (400 + length patterns), and `SGLangThrottledError` (429/503). Connection failures become `SGLangConnectionError`, non-JSON responses become `SGLangDecodingError`. These exceptions form the contract between `client.py` and `sglang.py` — the model layer never inspects raw HTTP status codes.
 
 **Rollout** (`rollout.py`) - Pydantic model for segment-based token accumulation for TITO. Tokens are appended via `add_prompt()` (loss_mask=0: system, user, tool results) and `add_response()` (loss_mask=1: model output), matching multi-turn conversation structure. `_add_segment()` is the single place that maintains the cross-field length invariant (`token_ids`/`loss_mask`/`logprobs` stay equal length). Exposes flat `token_ids`, `loss_mask`, `logprobs`, plus `routed_experts` and `image_data` lists and `segment_info` (`(is_output, length)` per segment). Also tracks routed experts (`add_routed_experts()`, `decode_routed_experts()`) and the `initial_prompt_length` property. The `SGLangModel` exposes its instance as `model.rollout`.
 
-**ToolParser** (`tool_parsers/`) - Abstract base with 5 implementations: `HermesToolParser` (Hermes/Qwen JSON), `QwenXMLToolParser` (XML), `GLM4ToolParser` (GLM-4), `KimiK2ToolParser` (special-token sections), and `DeepSeekV32ToolParser` (DSML-prefixed XML). Strict parsing: only catches JSONDecodeError, propagates failures as tool calls with `raw` content for model feedback. Excludes tool calls inside `<think>` blocks. New parsers self-register via `@register_tool_parser` decorator. Base class provides `validate_tokenizer(tokenizer)` hook for parser-tokenizer compatibility checks. `DeepSeekV32ToolParser` auto-sets `skip_special_tokens=False` in sampling_params to preserve DSML tokens in response text.
+**ToolParser** (`tool_parsers/`) - Abstract base with 4 implementations: `HermesToolParser` (Hermes/Qwen JSON), `QwenXMLToolParser` (XML), `GLMToolParser` (GLM-4), and `KimiK2ToolParser` (special-token sections). Strict parsing: only catches JSONDecodeError, propagates failures as tool calls with `raw` content for model feedback. Excludes tool calls inside `<think>` blocks. New parsers self-register via `@register_tool_parser` decorator. `SGLangModel` defaults `skip_special_tokens=False` in sampling_params so special-token tool-call formats (e.g. Kimi K2) survive in response text.
 
 **LoopLimiter** (`limiter.py`) - Strands hook bounding the agent loop. Supports `max_tool_iters` (one iteration = model response with tool calls + execution), `max_tool_calls` (individual call count), `max_parallel_tool_calls` (excess parallel calls cancelled), and `max_messages` (all roles counted, checked only on user-role messages so the loop stops at a complete message boundary; counters accumulate across invocations until `reset()`, bounding total conversation length in multi-turn env loops). Raises `MaxToolIterationsReachedError`, `MaxToolCallsReachedError`, or `MaxMessagesReachedError`, all subclasses of `LoopLimitReachedError`.
 
@@ -64,7 +64,7 @@ The package lives in `src/strands_sglang/` with 7 core modules:
 - **Incremental tokenization**: First call tokenizes full prompt; subsequent calls only tokenize new messages (tool results) with message separator prepended
 - **Strict tool parsing for RL**: No heuristic repair of malformed tool calls; errors propagated to model for self-correction
 - **Segment-based TITO**: Token tracking mirrors multi-turn structure (prompt=no loss, response=loss)
-- **VLM via server-side expansion**: Multimodal support is auto-detected from model config (`vision_config`). Tokenization always uses `tokenizer.encode()` — the SGLang server handles image token expansion via `image_data`. No `torch`/`torchvision` dependencies needed
+- **VLM via server-side expansion**: Multimodal support is auto-detected from the server (`/get_model_info` reports `has_image_understanding`). Tokenization always uses `tokenizer.encode()` — the SGLang server handles image token expansion via `image_data`. No `torch`/`torchvision` dependencies needed
 
 ## Maintenance
 
@@ -92,11 +92,11 @@ ssh -L 30000:localhost:30000 -N -f <remote-host>
 pytest tests/integration/ -v --sglang-base-url=http://localhost:30000
 ```
 
-Test with both an instruct model (e.g., `Qwen3-4B-Instruct-2507`) and a thinking model (e.g., `Qwen3-8B`) for full coverage. Thinking models will skip `MessageToTokenDrift` tests (expected).
+Test with both an instruct model (e.g., `Qwen3-4B-Instruct-2507`) and a thinking model (e.g., `Qwen3-8B`) for full coverage.
 
 ### VLM Integration Tests
 
-VLM tests require an SGLang server running a VLM model (e.g., `Qwen/Qwen3.5-4B`). No extra dependencies (`torch`, `torchvision`) are needed — multimodal support is auto-detected from the model config and image token expansion is handled server-side. Tests are automatically skipped when the model has no `vision_config`.
+VLM tests require an SGLang server running a VLM model (e.g., `Qwen/Qwen3.5-4B`). No extra dependencies (`torch`, `torchvision`) are needed — multimodal support is auto-detected from the server and image token expansion is handled server-side. Tests are automatically skipped when the server is running a text-only model.
 
 ```bash
 # Run VLM tests specifically
