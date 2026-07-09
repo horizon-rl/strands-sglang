@@ -30,6 +30,11 @@ from .limiter import (
     MaxToolCallsReachedError,
     MaxToolIterationsReachedError,
 )
+from .models import (
+    ModelFactory,
+    bedrock_mantle_model_factory,
+    bedrock_model_factory,
+)
 from .rollout import Rollout
 from .sglang import SGLangModel
 from .tool_parsers import get_tool_parser
@@ -51,6 +56,10 @@ __all__ = [
     "SGLangDecodingError",
     # Model
     "SGLangModel",
+    # Bedrock model factories
+    "ModelFactory",
+    "bedrock_model_factory",
+    "bedrock_mantle_model_factory",
     # Rollout
     "Rollout",
     # Tool parsing

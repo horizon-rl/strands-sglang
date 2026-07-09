@@ -75,6 +75,37 @@ async def main():
 asyncio.run(main())
 ```
 
+## Bedrock Backends
+
+For evaluation, data synthesis, or reward-model rollouts you can point the same
+`Agent` harness at hosted AWS Bedrock inference instead of a local SGLang server.
+Two factories return a `ModelFactory` (a zero-arg callable that builds a fresh
+Strands `Model` per rollout, keeping concurrent rollouts isolated):
+
+```python
+from strands import Agent
+from strands_sglang import bedrock_model_factory, bedrock_mantle_model_factory
+
+# Anthropic (and other Converse-API) models
+factory = bedrock_model_factory(model_id="us.anthropic.claude-sonnet-4-20250514-v1:0")
+
+# GPT models via the Bedrock Mantle OpenAI Responses API
+factory = bedrock_mantle_model_factory(
+    model_id="openai.gpt-5.4-2026-03-05",
+    region="us-east-2",
+    reasoning={"effort": "high"},
+)
+
+agent = Agent(model=factory())
+```
+
+These backends require extra dependencies (`boto3`, `strands-agents[openai]`,
+`aws-bedrock-token-generator`):
+
+```bash
+pip install strands-sglang[bedrock]
+```
+
 ## RL Training
 
 In principle, Strands-SGLang can be seen as a drop-in agentic rollout service and can be integrated with any RL training framework. A concrete example of training a math coding agent ([ReTool](https://arxiv.org/abs/2504.11536)) is available at [slime/examples/strands_sglang](https://github.com/THUDM/slime/tree/main/examples/strands_sglang).

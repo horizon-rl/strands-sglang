@@ -42,7 +42,7 @@ pytest tests/integration/ -v --sglang-base-url=http://localhost:30000
 
 ## Architecture
 
-The package lives in `src/strands_sglang/` with 7 core modules:
+The package lives in `src/strands_sglang/` with 8 core modules:
 
 **SGLangModel** (`sglang.py`) - Main entry point implementing the Strands `Model` interface. Requires `client` and `tokenizer` (keyword-only). Formats messages using HuggingFace chat templates (`apply_chat_template()`), calls SGLang's `/generate` endpoint (non-streaming by design for RL throughput), tracks TITO trajectory, and parses tool calls. VLM support is auto-detected server-side via `SGLangClient.is_multimodal()` (queries `/get_model_info` for `has_image_understanding`, cached after the first call). When multimodal, accumulates `image_data` (base64 data URLs) and forwards them to SGLang — the server handles image token expansion. Configuration via `SGLangConfig` TypedDict (sampling_params, return_logprob, return_routed_experts, enable_thinking).
 
@@ -57,6 +57,8 @@ The package lives in `src/strands_sglang/` with 7 core modules:
 **ToolParser** (`tool_parsers/`) - Abstract base with 4 implementations: `HermesToolParser` (Hermes/Qwen JSON), `QwenXMLToolParser` (XML), `GLMToolParser` (GLM-4), and `KimiK2ToolParser` (special-token sections). Strict parsing: only catches JSONDecodeError, propagates failures as tool calls with `raw` content for model feedback. Excludes tool calls inside `<think>` blocks. New parsers self-register via `@register_tool_parser` decorator. `SGLangModel` defaults `skip_special_tokens=False` in sampling_params so special-token tool-call formats (e.g. Kimi K2) survive in response text.
 
 **LoopLimiter** (`limiter.py`) - Strands hook bounding the agent loop. Supports `max_tool_iters` (one iteration = model response with tool calls + execution), `max_tool_calls` (individual call count), `max_parallel_tool_calls` (excess parallel calls cancelled), and `max_messages` (all roles counted, checked only on user-role messages so the loop stops at a complete message boundary; counters accumulate across invocations until `reset()`, bounding total conversation length in multi-turn env loops). Raises `MaxToolIterationsReachedError`, `MaxToolCallsReachedError`, or `MaxMessagesReachedError`, all subclasses of `LoopLimitReachedError`.
+
+**Bedrock model factories** (`models.py`) - Optional hosted-inference backends that complement the on-policy `SGLangModel` provider (for eval, data synthesis, reward-model rollouts). Each returns a `ModelFactory` (`Callable[[], Model]`) that builds a **fresh** Strands `Model` per rollout for concurrency isolation. `bedrock_model_factory` wraps `strands.models.bedrock.BedrockModel` (Anthropic/Converse-API), sharing one thread-safe boto3 client across instances and remapping `max_new_tokens`→`max_tokens`. `bedrock_mantle_model_factory` wraps `strands.models.openai_responses.OpenAIResponsesModel` (GPT via the Bedrock Mantle OpenAI Responses API), minting a SigV4 token per factory call via `aws_bedrock_token_generator.provide_token()` and remapping `max_new_tokens`→`max_output_tokens`; when `stateful=True` it neutralizes the class-level `_ModelPlugin._on_after_invocation` hook so local `agent.messages` persist for observation capture. All heavy deps (`boto3`, `strands-agents[openai]`, `aws-bedrock-token-generator`) are imported lazily and gated behind the `bedrock` optional-dependency group.
 
 ### Key Design Decisions
 
