@@ -205,7 +205,7 @@ class SGLangModel(Model):
                         }
                     )
             else:
-                # Non-tool content → one HF message (text, image, etc.; toolUse skipped)
+                # Non-tool content → one HF message; toolUse skipped: tool calls already live in the text block
                 content = [cls.format_content_block(c, is_multimodal) for c in msg["content"] if "toolUse" not in c]
                 result.append({"role": msg["role"], "content": content if is_multimodal else content[0]})
 
