@@ -64,6 +64,7 @@ The package lives in `src/strands_sglang/` with 7 core modules:
 - **Incremental tokenization**: First call tokenizes full prompt; subsequent calls only tokenize new messages (tool results) with message separator prepended
 - **Strict tool parsing for RL**: No heuristic repair of malformed tool calls; errors propagated to model for self-correction
 - **Segment-based TITO**: Token tracking mirrors multi-turn structure (prompt=no loss, response=loss)
+- **toolUse blocks skipped in message formatting**: `format_messages()` drops `toolUse` content blocks because tool calls already live verbatim in the assistant's text block (`stream()` yields the full raw text including `<tool_call>` markup, then parsed toolUse blocks separately — so Strands history holds both). Rendering toolUse via the chat template's `tool_calls` field would duplicate the call in the prompt and cause retokenization drift vs. the actual generated tokens
 - **VLM via server-side expansion**: Multimodal support is auto-detected from the server (`/get_model_info` reports `has_image_understanding`). Tokenization always uses `tokenizer.encode()` — the SGLang server handles image token expansion via `image_data`. No `torch`/`torchvision` dependencies needed
 
 ## Maintenance
