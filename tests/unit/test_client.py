@@ -14,7 +14,6 @@
 
 """Unit tests for SGLangClient (mocked, no server required)."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -332,7 +331,7 @@ class TestGenerateErrors:
 
     async def test_connection_error_on_timeout(self):
         """asyncio.TimeoutError is wrapped in SGLangConnectionError."""
-        client = _client_with_mock_session(side_effect=asyncio.TimeoutError())
+        client = _client_with_mock_session(side_effect=TimeoutError())
 
         with pytest.raises(SGLangConnectionError):
             await client.generate(input_ids=[1, 2, 3])
