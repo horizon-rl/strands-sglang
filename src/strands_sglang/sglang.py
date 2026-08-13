@@ -107,7 +107,11 @@ class SGLangModel(Model):
         logger.debug("initialized with config: %s", self.config)
 
     def reset(self) -> None:
-        """Reset all state for a new episode."""
+        """Reset all state for a new episode.
+
+        Notes:
+            This typically serves as a context management breakpoint where conversation history is trimmed.
+        """
         self.rollout = Rollout()
         self.processed_messages = 0
         self.tool_parse_errors = {}
