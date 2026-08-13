@@ -101,13 +101,20 @@ class SGLangModel(Model):
 
         # State tracking (this makes SGLangModel stateful)
         self.rollout = Rollout()  # token-in/token-out rollout tracker
+        self.rollout_history: list[Rollout] = []  # trajectories closed by earlier reset() calls
         self.processed_messages: int = 0  # multi-turn message cursor
         self.tool_parse_errors: dict[str, int] = {}  # per-tool parse error count
 
         logger.debug("initialized with config: %s", self.config)
 
     def reset(self) -> None:
-        """Reset all state for a new episode."""
+        """Reset all state for a new episode, keeping the finished rollout in `rollout_history`.
+
+        Notes:
+            This typically serves as a context management breakpoint where conversation history is trimmed.
+        """
+        if len(self.rollout):
+            self.rollout_history.append(self.rollout)
         self.rollout = Rollout()
         self.processed_messages = 0
         self.tool_parse_errors = {}
