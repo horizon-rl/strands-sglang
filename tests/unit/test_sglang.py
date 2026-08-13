@@ -152,6 +152,23 @@ class TestTokenizePromptMessages:
             model.tokenize_prompt_messages(messages, system_prompt=None)
 
 
+class TestConfig:
+    """Tests for context_window_limit, inherited from BaseModelConfig."""
+
+    def test_unset_by_default(self, model):
+        assert model.context_window_limit is None
+
+    def test_set_at_construction(self, mock_tokenizer):
+        """Conversation managers read this; without it they fall back to a hardcoded default."""
+        client = SGLangClient(base_url="http://localhost:30000")
+        model = SGLangModel(client=client, tokenizer=mock_tokenizer, context_window_limit=262144)
+        assert model.context_window_limit == 262144
+
+    def test_set_via_update_config(self, model):
+        model.update_config(context_window_limit=131072)
+        assert model.context_window_limit == 131072
+
+
 class TestReset:
     """Tests for reset(), the context management breakpoint between rollouts."""
 

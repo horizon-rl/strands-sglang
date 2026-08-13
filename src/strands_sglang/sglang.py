@@ -22,7 +22,6 @@ from collections.abc import AsyncGenerator, AsyncIterable
 from functools import cached_property
 from typing import (
     Any,
-    TypedDict,
     TypeVar,
     Unpack,
     cast,
@@ -31,7 +30,7 @@ from typing import (
 
 import pybase64
 from pydantic import BaseModel
-from strands.models import Model
+from strands.models import BaseModelConfig, Model
 from strands.types.content import ContentBlock, Messages, SystemContentBlock
 from strands.types.exceptions import (
     ContextWindowOverflowException,
@@ -66,8 +65,13 @@ class SGLangModel(Model):
         >>> model.rollout.logprobs     # Log probabilities
     """
 
-    class SGLangConfig(TypedDict, total=False):
-        """Configuration options for SGLang generation."""
+    class SGLangConfig(BaseModelConfig, total=False):
+        """Configuration options for SGLang generation.
+
+        Notes:
+            Inherits `context_window_limit` from `BaseModelConfig`; conversation managers read it
+            via `Model.context_window_limit` and otherwise fall back to a hardcoded default.
+        """
 
         sampling_params: dict[str, Any] | None  # Passed to /generate endpoint
         return_logprob: bool | None  # Return logprobs for all tokens (default: True)
