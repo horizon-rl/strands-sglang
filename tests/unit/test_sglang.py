@@ -152,6 +152,40 @@ class TestTokenizePromptMessages:
             model.tokenize_prompt_messages(messages, system_prompt=None)
 
 
+class TestReset:
+    """Tests for reset(), the context management breakpoint between rollouts."""
+
+    def test_keeps_the_finished_rollout(self, model):
+        """The finished rollout is kept, still carrying the loss_mask that makes it trainable."""
+        model.rollout.add_prompt([1, 2, 3])
+        model.rollout.add_response([4, 5], logprobs=[-0.1, -0.2])
+        finished = model.rollout
+
+        model.reset()
+
+        assert model.rollout_history == [finished]
+        assert model.rollout_history[0].loss_mask == [0, 0, 0, 1, 1]
+        assert model.rollout_history[0].logprobs[-2:] == [-0.1, -0.2]
+
+    def test_starts_a_fresh_rollout(self, model):
+        """Rewinding the cursor makes the next prompt tokenize in full."""
+        model.rollout.add_prompt([1, 2, 3])
+        model.processed_messages = 2
+
+        model.reset()
+
+        assert len(model.rollout) == 0
+        assert model.rollout.segment_info == []
+        assert model.processed_messages == 0
+
+    def test_empty_rollout_is_not_kept(self, model):
+        """Back-to-back resets do not accumulate empty rollouts."""
+        model.reset()
+        model.reset()
+
+        assert model.rollout_history == []
+
+
 class TestSortToolResults:
     """Tests for sort_tool_results method."""
 
