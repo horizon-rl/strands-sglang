@@ -246,6 +246,22 @@ class SGLangModel(Model):
             for msg in messages
         ]
 
+    # TODO: add support for other modalities (e.g. audio, video, etc.)
+    @classmethod
+    def collect_image_data(cls, messages: Messages, is_multimodal: bool = False) -> list[str]:
+        """Base64 data URLs of every image in `messages`, in prompt order.
+
+        Notes:
+            Derived from `messages` instead of accumulated turn by turn, so re-running a turn
+            (Strands retries the model call after e.g. a context overflow) yields the same list
+            rather than a second copy of each image. SGLang expands image tokens per entry, so a
+            duplicate would desynchronize the prompt from the tokens tracked in `rollout`.
+        """
+        if not is_multimodal:
+            return []
+        hf_messages = cls.format_messages(cls.sort_tool_results(messages), is_multimodal=True)
+        return [part["image"] for msg in hf_messages for part in msg["content"] if part.get("type") == "image"]
+
     def tokenize_prompt_messages(
         self,
         messages: Messages,
@@ -260,21 +276,9 @@ class SGLangModel(Model):
             - Subsequent calls: uses a fake prefix (system + user) for boundary formatting,
             then subtracts it to extract only incremental tokens.
         """
-
-        # TODO: add support for other modalities (e.g. audio, video, etc.)
-        def update_multimodal_data(hf_messages: list[dict[str, Any]]) -> None:
-            if not is_multimodal:
-                return
-            for msg in hf_messages:
-                for part in msg["content"]:
-                    match part.get("type"):
-                        case "image":
-                            self.rollout.image_data.append(part["image"])
-
         # First call: full prompt with tools
         if self.processed_messages == 0:
             hf_messages = self.format_messages(messages, system_prompt, is_multimodal=is_multimodal)
-            update_multimodal_data(hf_messages)
             tools = self.format_tool_specs(tool_specs) if tool_specs else None
             prompt = cast(
                 str,
@@ -289,7 +293,6 @@ class SGLangModel(Model):
             new_hf_messages = self.format_messages(
                 self.sort_tool_results(messages[self.processed_messages :]), is_multimodal=is_multimodal
             )
-            update_multimodal_data(new_hf_messages)
             fake_messages = [
                 {"role": "system", "content": [{"text": "FAKE SYSTEM PROMPT"}]},
                 {"role": "user", "content": [{"text": "FAKE USER MESSAGE"}]},
@@ -346,6 +349,7 @@ class SGLangModel(Model):
         )
         # Tracking token IDs in the rollout to ensure the token-in feature
         input_ids = self.rollout.token_ids + new_input_ids
+        image_data = self.collect_image_data(messages, is_multimodal=is_multimodal)
 
         # Assistant message start
         yield {"messageStart": {"role": "assistant"}}
@@ -360,7 +364,7 @@ class SGLangModel(Model):
                 logprob_start_len=max(0, len(self.rollout) - 1) if return_logprob else None,
                 return_routed_experts=return_routed_experts,
                 routed_experts_start_len=max(0, len(self.rollout) - 1) if return_routed_experts else 0,
-                image_data=self.rollout.image_data or None,
+                image_data=image_data or None,
             )
 
             # Extract response data
@@ -387,6 +391,8 @@ class SGLangModel(Model):
             token_ids=output_ids,
             logprobs=[e[0] for e in output_token_logprobs] if output_token_logprobs else None,
         )
+        # Record what was sent, so the rollout reflects the images the tokens were generated against.
+        self.rollout.image_data = image_data
         # Collect this turn's routing slice; decode_routed_experts() stitches the per-turn slices.
         if return_routed_experts:
             self.rollout.add_routed_experts(meta_info["routed_experts"])  # KeyError if server omits it

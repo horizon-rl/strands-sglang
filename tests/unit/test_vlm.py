@@ -20,9 +20,11 @@ import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from strands.types.exceptions import ContextWindowOverflowException
 
 from strands_sglang import SGLangModel
 from strands_sglang.client import SGLangClient
+from strands_sglang.exceptions import SGLangContextLengthError
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -192,14 +194,12 @@ class TestFormatMessagesMultimodal:
 
 class TestImageAccumulation:
     def test_images_accumulated_across_calls(self, vlm_model, mock_tokenizer):
-        """image_data grows across multiple tokenize_prompt_messages calls."""
+        """collect_image_data returns every image in the conversation, in prompt order."""
         # First turn: one image
         messages1 = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
-        vlm_model.tokenize_prompt_messages(messages1, system_prompt=None, is_multimodal=True)
-        assert len(vlm_model.rollout.image_data) == 1
+        assert vlm_model.collect_image_data(messages1, is_multimodal=True) == [_RED_PIXEL_DATA_URL]
 
         # Second turn: simulate assistant response + tool result with screenshot
-        vlm_model.rollout.add_prompt([10, 20, 30])
         vlm_model.processed_messages = 2  # len([user_msg]) + 1 after first generation
         messages2 = [
             {"role": "user", "content": [{"text": "describe"}, _image_block()]},
@@ -223,13 +223,16 @@ class TestImageAccumulation:
                 ],
             },
         ]
-        vlm_model.tokenize_prompt_messages(messages2, system_prompt=None, is_multimodal=True)
-        assert len(vlm_model.rollout.image_data) == 2  # 1 from first + 1 from second (tool result image)
+        # 1 from the first user message + 1 from the tool result
+        assert vlm_model.collect_image_data(messages2, is_multimodal=True) == [_RED_PIXEL_DATA_URL] * 2
+
+    def test_text_only_collects_nothing(self, vlm_model):
+        """A text-only server gets no image_data, even when the messages carry images."""
+        messages = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
+        assert vlm_model.collect_image_data(messages, is_multimodal=False) == []
 
     def test_reset_clears_accumulated_images(self, vlm_model, mock_tokenizer):
-        messages = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
-        vlm_model.tokenize_prompt_messages(messages, system_prompt=None, is_multimodal=True)
-        assert len(vlm_model.rollout.image_data) > 0
+        vlm_model.rollout.image_data = [_RED_PIXEL_DATA_URL]
 
         vlm_model.reset()
         assert vlm_model.rollout.image_data == []
@@ -262,6 +265,45 @@ class TestStreamImageData:
             ):
                 pass
             assert mock_gen.call_args.kwargs["image_data"] is None
+
+    @pytest.mark.asyncio
+    async def test_failed_generate_does_not_duplicate_images(self, vlm_model, mock_tokenizer):
+        """Retrying a turn re-sends the same images, not one copy per attempt.
+
+        Strands re-runs the whole event loop cycle after a `ContextWindowOverflowException`, which
+        calls `stream()` again for the same turn. SGLang expands image tokens per entry in
+        `image_data`, so a duplicated entry desynchronizes the prompt from the tokens we tracked.
+        """
+        calls = []
+
+        async def _generate(**kwargs):
+            calls.append(list(kwargs["image_data"] or []))
+            if len(calls) == 1:
+                raise SGLangContextLengthError("too long", status=400, body="context length exceeded")
+            return {
+                "text": "response",
+                "output_ids": [100],
+                "meta_info": {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 1,
+                    "cached_tokens": 0,
+                    "finish_reason": {"type": "stop"},
+                    "e2e_latency": 0.1,
+                },
+            }
+
+        vlm_model.client.is_multimodal = AsyncMock(return_value=True)
+        messages = [{"role": "user", "content": [{"text": "describe"}, _image_block()]}]
+
+        with patch.object(vlm_model.client, "generate", side_effect=_generate):
+            with pytest.raises(ContextWindowOverflowException):
+                async for _ in vlm_model.stream(messages=messages):
+                    pass
+            async for _ in vlm_model.stream(messages=messages):
+                pass
+
+        assert calls == [[_RED_PIXEL_DATA_URL], [_RED_PIXEL_DATA_URL]]
+        assert vlm_model.rollout.image_data == [_RED_PIXEL_DATA_URL]
 
 
 def _async_mock_generate():
