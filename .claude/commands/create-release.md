@@ -41,7 +41,7 @@ Present the full release notes in the body format below and ask the user to conf
 ### Bug Fixes
 - Brief description of fix
 
-**Full Changelog**: https://github.com/horizon-rl/strands-sglang/compare/<last_tag>...v<new_version>
+**Full Changelog**: https://github.com/strands-rl/strands-sglang/compare/<last_tag>...v<new_version>
 ```
 
 ### 4. Create the GitHub release
