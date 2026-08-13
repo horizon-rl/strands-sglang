@@ -21,7 +21,7 @@ Usage:
     pytest tests/integration/ --sglang-base-url=http://localhost:30000
     pytest tests/integration/ --sglang-base-url=http://localhost:30000 --tool-parser=qwen_xml
 
-The model ID is auto-detected from the server's /get_model_info endpoint.
+The model ID is auto-detected from the server's /model_info endpoint.
 """
 
 import httpx
@@ -59,7 +59,7 @@ def _get_server_info(base_url: str, timeout: float = 5.0) -> dict:
 
     # Get model info
     try:
-        response = httpx.get(f"{base_url}/get_model_info", timeout=timeout)
+        response = httpx.get(f"{base_url}/model_info", timeout=timeout)
         return response.json()
     except Exception as e:
         pytest.exit(f"Failed to get model info: {e}", returncode=1)
