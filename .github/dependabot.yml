@@ -1,0 +1,36 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Let a release settle before we adopt it; a yanked or broken publish is
+    # usually caught upstream within a few days.
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      # Pinned to `==` on purpose: e2b.py monkeypatches `e2b.api.validate_api_key`
+      # so self-hosted clusters' non-hex keys pass, and patching a renamed target
+      # fails silently at auth time rather than at import. Prebaked template ids
+      # are tied to the SDK version too. Upgrade by hand against a real cluster.
+      - dependency-name: e2b
+    groups:
+      # Dev tooling lands as one PR; runtime deps stay separate so a break is easy to bisect.
+      dev:
+        dependency-type: development
+        patterns: ["*"]
+    commit-message:
+      prefix: build
