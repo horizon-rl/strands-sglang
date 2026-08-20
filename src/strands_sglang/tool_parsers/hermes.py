@@ -1,5 +1,3 @@
-"""Hermes/Qwen JSON tool call parser."""
-
 from __future__ import annotations
 
 import json
@@ -21,9 +19,7 @@ class HermesToolParser(ToolParser):
 
         <tool_call>{"name": "func", "arguments": {"arg": "value"}}</tool_call>
 
-    Notes:
-        - Used by Qwen2.5/Qwen3 and NousResearch/Hermes models.
-        - Think blocks are excluded to avoid parsing draft tool calls from reasoning.
+    Used by Qwen2.5/Qwen3 and NousResearch/Hermes models.
     """
 
     _NAME_PATTERN = re.compile(r'"name"\s*:\s*"([^"]+)"')

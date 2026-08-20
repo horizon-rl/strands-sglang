@@ -1,23 +1,4 @@
 #!/usr/bin/env python3
-"""Retokenization drift example: Why TITO matters for RL training.
-
-Demonstrates: `encode(decode(tokens)) != tokens`
-
-This happens because `tokenizer.encode()` may produce different token sequences
-than what the model generated during rollout. The same text can have multiple
-valid tokenizations. TITO captures exact token IDs during generation.
-
-NOTE: Drift is rare and depends on specific tokenizer edge cases. This example
-uses a complex problem with extended thinking to increase the chance of triggering
-drift. Even if no drift occurs, TITO is still valuable for capturing exact tokens.
-
-Requirements:
-    python -m sglang.launch_server --model-path Qwen/Qwen3-4B-Thinking-2507 --port 30000
-
-Usage:
-    python examples/retokenization_drift/main.py
-"""
-
 import asyncio
 import os
 
@@ -40,7 +21,7 @@ def calculator(expression: str) -> str:
     if not expression or set(expression) - allowed:
         return f"Unsupported expression: {expression!r}"
     try:
-        return str(eval(expression, {"__builtins__": {}}, {}))  # noqa: S307 — alphabet is restricted above
+        return str(eval(expression, {"__builtins__": {}}, {}))  # the alphabet check above is what makes this safe
     except Exception as e:
         return f"Could not evaluate {expression!r}: {e}"
 

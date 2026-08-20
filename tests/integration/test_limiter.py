@@ -1,5 +1,3 @@
-"""Integration tests for LoopLimiter."""
-
 import pytest
 from strands import Agent
 from strands.types.exceptions import EventLoopException

@@ -1,5 +1,3 @@
-"""SGLang HTTP client with connection pooling and retry logic."""
-
 from __future__ import annotations
 
 import asyncio
@@ -43,11 +41,9 @@ CONTEXT_LENGTH_PATTERNS = ("exceed", "too long", "maximum length", "context leng
 class SGLangClient:
     """Async HTTP client for SGLang server with connection pooling and retry.
 
-    Notes:
-        - Designed for RL training stability with aggressive retry on transient errors.
-        Aligned with slime's `http_utils.py` approach.
-        - Uses non-streaming POST requests for better parallelism in high-concurrency
-        training scenarios (no SSE overhead, connections released immediately).
+    Retries aggressively on transient errors, following slime's `http_utils.py`, because an RL run
+    that dies on a reloading server wastes the whole rollout. Requests are non-streaming POSTs: no
+    SSE overhead and the connection is released immediately, which is what high concurrency needs.
 
     Example:
         >>> async with SGLangClient(base_url="http://localhost:30000") as client:
@@ -75,12 +71,12 @@ class SGLangClient:
         """Initialize SGLang client.
 
         Args:
-            base_url: SGLang server URL (e.g., "http://localhost:30000").
-            max_connections: Maximum concurrent connections (default: 1000).
-            timeout: Request timeout in seconds, or None for infinite (default: 900.0).
-            connect_timeout: TCP connection timeout in seconds (default: 5s).
-            max_retries: Maximum retry attempts on transient errors (default: 60, like slime).
-            retry_delay: Delay between retries in seconds (default: 1.0).
+            base_url: SGLang server URL, e.g. `http://localhost:30000`.
+            max_connections: cap on concurrent connections.
+            timeout: seconds per request; `None` waits forever, which is what long RL rollouts want.
+            connect_timeout: seconds to establish the TCP connection.
+            max_retries: attempts on a transient error. The default of 60 matches slime.
+            retry_delay: seconds between attempts.
         """
         self.base_url = base_url.rstrip("/")
         self.max_retries = max_retries
@@ -162,24 +158,17 @@ class SGLangClient:
         - 401/403/404: Auth/routing errors that won't self-resolve
         - 400 with context length keywords: Prompt too long, retrying won't help
         """
-        if isinstance(e, SGLangHTTPError):
-            # Non-retryable: auth/routing errors
-            if e.status in NON_RETRYABLE_STATUS_CODES:
+        match e:
+            case SGLangContextLengthError():
                 return False
-            # Non-retryable: context length exceeded
-            if isinstance(e, SGLangContextLengthError):
+            case SGLangHTTPError() if e.status in NON_RETRYABLE_STATUS_CODES:
                 return False
-            # Retry everything else: 5xx, 408, 429, other 400s, etc.
-            return True
-        # Retry all connection/timeout/decoding errors
-        return True
+            case _:
+                # 5xx, 408, 429, other 400s, and every connection/timeout/decoding error.
+                return True
 
     async def generate(self, input_ids: list[int], **kwargs: Any) -> dict[str, Any]:
-        """Call SGLang `/generate` endpoint with retry.
-
-        Notes:
-            Non-retryable: 401/403/404 and context-length 400s. All other errors are retried.
-        """
+        """Call SGLang `/generate` endpoint, retrying per `_is_retryable_error`."""
         payload: dict[str, Any] = {
             "input_ids": input_ids,
             **kwargs,

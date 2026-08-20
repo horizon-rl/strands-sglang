@@ -14,7 +14,7 @@ Integration tests require a running SGLang server. Before running any commands, 
 Then proceed:
 
 1. Create a temporary venv at `/tmp/strands-sglang-test-venv` using `uv venv /tmp/strands-sglang-test-venv --python 3.12 -q`
-2. Install the package with dev dependencies: `uv pip install -e ".[dev]" --python /tmp/strands-sglang-test-venv/bin/python -q`
+2. Install the package with dev dependencies: `uv pip install -e . --group dev --python /tmp/strands-sglang-test-venv/bin/python -q`
 3. Run integration tests with the confirmed URL and tool parser:
    `/tmp/strands-sglang-test-venv/bin/python -m pytest tests/integration/ -v --tb=short --sglang-base-url=<URL> --tool-parser=<PARSER> $ARGUMENTS`
 

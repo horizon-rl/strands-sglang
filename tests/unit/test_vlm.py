@@ -1,5 +1,3 @@
-"""Unit tests for VLM (Vision Language Model) support."""
-
 from __future__ import annotations
 
 import base64

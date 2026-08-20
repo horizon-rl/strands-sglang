@@ -1,5 +1,3 @@
-"""Unit tests for tool_parser module."""
-
 import pytest
 
 from strands_sglang.tool_parsers import (

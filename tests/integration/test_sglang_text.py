@@ -1,6 +1,3 @@
-"""Integration tests for SGLangModel streaming and token trajectory."""
-
-
 async def test_stream_generation(model):
     """Single-turn generation produces correct Strands events, metadata, and token segments."""
     messages = [{"role": "user", "content": [{"text": "Say 'hello' and nothing else."}]}]

@@ -1,5 +1,3 @@
-"""Tool call parsers for different model chat templates."""
-
 from .base import TOOL_PARSER_REGISTRY, ToolParser, ToolParseResult, get_tool_parser
 
 # Import parsers to trigger registration via @register_tool_parser decorator

@@ -1,17 +1,7 @@
-"""Math agent example with TITO (Token-In/Token-Out) for RL training.
-
-This example demonstrates:
-1. Setting up SGLangModel with a HuggingFace tokenizer
-2. Creating a math agent with calculator tool
-3. Single-turn and multi-turn conversations
-4. Accessing TITO data (tokens, masks, logprobs) for RL training
-
-Requirements:
-    - SGLang server running: python -m sglang.launch_server --model-path Qwen/Qwen3-4B-Thinking-2507 --port 30000
-
-Usage:
-    python examples/math_agent.py
-"""
+# Math agent with TITO: single- and multi-turn, then the token trajectory for RL training.
+#
+#   python -m sglang.launch_server --model-path Qwen/Qwen3-4B-Thinking-2507 --port 30000
+#   python examples/math_agent.py
 
 import asyncio
 import json
@@ -36,7 +26,7 @@ def calculator(expression: str) -> str:
     if not expression or set(expression) - allowed:
         return f"Unsupported expression: {expression!r}"
     try:
-        return str(eval(expression, {"__builtins__": {}}, {}))  # noqa: S307 — alphabet is restricted above
+        return str(eval(expression, {"__builtins__": {}}, {}))  # the alphabet check above is what makes this safe
     except Exception as e:
         return f"Could not evaluate {expression!r}: {e}"
 

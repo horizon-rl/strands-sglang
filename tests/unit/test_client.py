@@ -1,5 +1,3 @@
-"""Unit tests for SGLangClient (mocked, no server required)."""
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp

@@ -1,5 +1,3 @@
-"""Unit tests for cached utility functions."""
-
 from unittest.mock import MagicMock
 
 from strands_sglang.utils import get_client, get_client_from_slime_args

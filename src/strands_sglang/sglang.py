@@ -1,5 +1,3 @@
-"""SGLang model provider with token-in/token-out support."""
-
 from __future__ import annotations
 
 import json
@@ -54,9 +52,8 @@ class SGLangModel(Model):
     class SGLangConfig(BaseModelConfig, total=False):
         """Configuration options for SGLang generation.
 
-        Notes:
-            Inherits `context_window_limit` from `BaseModelConfig`; conversation managers read it
-            via `Model.context_window_limit` and otherwise fall back to a hardcoded default.
+        Inherits `context_window_limit` from `BaseModelConfig`, which is where conversation managers
+        read it from via `Model.context_window_limit`; without it they use a hardcoded default.
         """
 
         sampling_params: dict[str, Any] | None  # Passed to /generate endpoint
@@ -72,14 +69,7 @@ class SGLangModel(Model):
         tool_parser: ToolParser | None = None,
         **config: Unpack[SGLangConfig],
     ) -> None:
-        """Initialize SGLang model provider.
-
-        Args:
-            client: `SGLangClient` for HTTP communication with the SGLang server.
-            tokenizer: HuggingFace tokenizer for chat template and tokenization.
-            tool_parser: `ToolParser` for tool calls (default: `HermesToolParser`).
-            **config: Additional SGLang generation configuration (see `SGLangConfig`).
-        """
+        """Initialize SGLang model provider."""
         self.client = client
         self.tokenizer = tokenizer
         self.tool_parser = tool_parser or HermesToolParser()
@@ -100,8 +90,8 @@ class SGLangModel(Model):
     def reset(self) -> None:
         """Reset all state for a new episode, keeping the finished rollout in `rollout_history`.
 
-        Notes:
-            This typically serves as a context management breakpoint where conversation history is trimmed.
+        Usually the point where a conversation manager trims history, so it doubles as the context
+        management breakpoint.
         """
         if len(self.rollout):
             self.rollout_history.append(self.rollout)
@@ -115,12 +105,10 @@ class SGLangModel(Model):
 
     @override
     def update_config(self, **model_config: Unpack[SGLangConfig]) -> None:  # type: ignore[override]
-        """Update the model configuration."""
         self.config.update(model_config)
 
     @override
     def get_config(self) -> SGLangConfig:
-        """Get the model configuration."""
         return cast(SGLangModel.SGLangConfig, self.config)
 
     # -------------------------------------------------------------------------
@@ -226,8 +214,8 @@ class SGLangModel(Model):
     def sort_tool_results(messages: Messages) -> Messages:
         """Sort tool results by ID to match original call order.
 
-        Notes:
-            In strands' format, parallel tool results are batched into a single message.
+        Strands batches parallel tool results into one message, so the ordering within that
+        message is what has to be fixed.
         """
         return [
             {**msg, "content": sorted(msg["content"], key=lambda c: c["toolResult"]["toolUseId"])}
@@ -261,10 +249,9 @@ class SGLangModel(Model):
     ) -> list[int]:
         """Tokenize prompt messages for the next generation call.
 
-        Notes:
-            - First call: tokenizes full prompt with system prompt and tools.
-            - Subsequent calls: uses a fake prefix (system + user) for boundary formatting,
-            then subtracts it to extract only incremental tokens.
+        The first call tokenizes the whole prompt, system prompt and tools included. Later calls
+        format against a throwaway system+user prefix to get the message boundaries right, then
+        subtract it so only the incremental tokens remain.
         """
         # First call: full prompt with tools
         if self.processed_messages == 0:

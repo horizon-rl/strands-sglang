@@ -1,5 +1,3 @@
-"""Integration tests for SGLangClient error classification."""
-
 import pytest
 
 from strands_sglang.client import SGLangClient

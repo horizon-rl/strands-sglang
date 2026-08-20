@@ -1,9 +1,3 @@
-"""Unit tests for LoopLimiter.
-
-Tests the limiter by directly feeding it MessageAddedEvent objects,
-without needing a real agent or server.
-"""
-
 from unittest.mock import Mock
 
 import pytest

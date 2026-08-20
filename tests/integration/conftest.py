@@ -1,15 +1,3 @@
-"""Shared fixtures for integration tests.
-
-All tests in this directory are automatically marked as integration tests
-and require a running SGLang server.
-
-Usage:
-    pytest tests/integration/ --sglang-base-url=http://localhost:30000
-    pytest tests/integration/ --sglang-base-url=http://localhost:30000 --tool-parser=qwen_xml
-
-The model ID is auto-detected from the server's /model_info endpoint.
-"""
-
 import httpx
 import pytest
 from strands import tool
@@ -156,7 +144,7 @@ def calculator(expression: str) -> str:
     if not expression or set(expression) - allowed:
         return f"Unsupported expression: {expression!r}"
     try:
-        return str(eval(expression, {"__builtins__": {}}, {}))  # noqa: S307 — alphabet is restricted above
+        return str(eval(expression, {"__builtins__": {}}, {}))  # the alphabet check above is what makes this safe
     except Exception as e:
         return f"Could not evaluate {expression!r}: {e}"
 

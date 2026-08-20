@@ -1,10 +1,3 @@
-"""Unit tests for SGLangModel message formatting.
-
-Regression tests compare the new direct Strands→HF conversion against the
-reference OpenAI-based implementation (pre-refactor) to verify no change
-in behavior.
-"""
-
 from __future__ import annotations
 
 from typing import Any
