@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "strands-sglang"
 dynamic = ["version"]
-description = "SGLang model provider for Strands Agents SDK with Token-in/Token-out support for agentic RL training."
+description = "SGLang model provider of Strands Agents for on-policy agentic RL training."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
