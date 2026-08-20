@@ -14,11 +14,11 @@ pytestmark = pytest.mark.integration
 def _get_server_info(base_url: str, timeout: float = 5.0) -> dict:
     """Check server health and get model info.
 
-    Returns:
-        Server info dict with 'model_path' and 'tokenizer_path'.
+    Any failure calls `pytest.exit(returncode=1)` — an unreachable server means every integration
+    test would fail for the same reason, so the session ends here rather than 200 tests later.
 
-    Raises:
-        pytest.exit: If server is not reachable or unhealthy.
+    Returns:
+        The `/model_info` payload, which carries `model_path` and `tokenizer_path`.
     """
     # Health check
     try:
