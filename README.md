@@ -38,7 +38,7 @@ Or install from source with development dependencies:
 ```bash
 git clone https://github.com/strands-rl/strands-sglang.git
 cd strands-sglang
-pip install -e ".[dev]"
+uv sync
 ```
 
 ## Quick Start
@@ -105,8 +105,8 @@ pytest tests/integration/ -v --sglang-base-url=http://localhost:30000
 Contributions welcome! Install pre-commit hooks for code style and commit message validation:
 
 ```bash
-pip install -e ".[dev]"
-pre-commit install -t pre-commit -t commit-msg
+uv sync
+pre-commit install
 ```
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/). Commit messages must follow the format:
