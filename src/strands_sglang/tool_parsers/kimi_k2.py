@@ -1,5 +1,3 @@
-"""Kimi K2 special-token tool call parser."""
-
 from __future__ import annotations
 
 import json
@@ -24,9 +22,8 @@ class KimiK2ToolParser(ToolParser):
         <|tool_calls_section_end|>
 
     Notes:
-        - The raw ID (e.g. `functions.func_name:0`) is preserved as `tool_call_id`
-        for correct round-trip with the chat template (`## Return of <id>`).
-        - Think blocks are excluded to avoid parsing draft tool calls from reasoning.
+        The raw ID (`functions.func_name:0`) is kept as `tool_call_id` because the chat template
+        echoes it back as `## Return of <id>`; a rewritten ID breaks the round-trip.
     """
 
     SECTION_PATTERN = re.compile(

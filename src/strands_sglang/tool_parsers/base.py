@@ -1,5 +1,3 @@
-"""Base classes for tool call parsing."""
-
 from __future__ import annotations
 
 import json
@@ -19,9 +17,8 @@ T = TypeVar("T", bound="ToolParser")
 class ToolParseResult:
     """A parsed tool call request.
 
-    Notes:
-        - For successful parses: name and input are populated, raw is `None`.
-        - For parse errors: name is extracted or `UNKNOWN_NAME`, raw contains the unparsable content.
+    On success `name` and `input` are populated and `raw` is `None`. On a parse error `raw` holds the
+    unparsable content and `name` is whatever could be salvaged, else `UNKNOWN_NAME`.
     """
 
     UNKNOWN_NAME: ClassVar[str] = "unknown_tool"
@@ -52,12 +49,13 @@ class ToolParseResult:
 class ToolParser(ABC):
     """Base class for tool call parsers.
 
+    Subclasses implement `parse`. Two obligations it carries: exclude `<think>` blocks, or a model's
+    draft tool calls from its own reasoning get executed; and salvage a tool name even from
+    unparsable output, since error handling needs one.
+
     Notes:
-        - Subclasses implement `parse` to extract tool calls from model output:
-            - `<think>` blocks should be excluded to avoid parsing draft tool calls from reasoning.
-            - Best-effort extracted tool name is used for error handling.
-        - Only `json.JSONDecodeError` is handled; arguments are passed as-is
-          and validated by Strands downstream.
+        Only `json.JSONDecodeError` is caught here. Arguments pass through unvalidated — Strands
+        checks them against the tool schema downstream.
     """
 
     DEFAULT_TOOL_START_TOKEN = "<tool_call>"
@@ -92,7 +90,6 @@ class ToolParser(ABC):
     @abstractmethod
     def parse(self, text: str) -> list[ToolParseResult]:
         """Parse tool calls from model output text."""
-        pass
 
 
 def register_tool_parser(name: str) -> Callable[[type[T]], type[T]]:

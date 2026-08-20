@@ -1,5 +1,3 @@
-"""Rollout trajectory tracking for token-in/token-out training."""
-
 from __future__ import annotations
 
 import numpy as np
@@ -9,25 +7,29 @@ from pydantic import BaseModel, Field
 
 
 class Rollout(BaseModel):
-    """A `Rollout` instance tracks full token-level trajectory and metadata for token-in/token-out (TITO) training.
+    """The full token-level trajectory of one rollout, for token-in/token-out (TITO) training.
 
-    Attributes:
-        token_ids: Flat token IDs for the whole rollout.
-        loss_mask: Flat per-token mask, aligned with `token_ids`. `0` for prompt tokens
-            (system, user, tool results); `1` for response tokens (model output).
-        logprobs: Flat per-token log probabilities, aligned with `token_ids`.
-            `logprobs[0]` is `None` — the first token has no predecessor to score.
-        routed_experts: List of base64 encoded routed experts, one per turn.
-        image_data: List of base64 encoded image data URLs throughout the rollout.
-        segment_info: `(is_output, length)` per appended segment, in order.
+    `token_ids`, `loss_mask` and `logprobs` are flat and index-aligned; `_add_segment` is the one
+    place that keeps them the same length.
     """
 
-    token_ids: list[int] = Field(default_factory=list)
-    loss_mask: list[int] = Field(default_factory=list)
-    logprobs: list[float | None] = Field(default_factory=list)
-    routed_experts: list[str] = Field(default_factory=list)
-    image_data: list[str] = Field(default_factory=list)
-    segment_info: list[tuple[bool, int]] = Field(default_factory=list)
+    token_ids: list[int] = Field(default_factory=list, description="Flat token IDs for the whole rollout.")
+    loss_mask: list[int] = Field(
+        default_factory=list,
+        description="0 for prompt tokens (system, user, tool results), 1 for model output.",
+    )
+    logprobs: list[float | None] = Field(
+        default_factory=list,
+        description=(
+            "Per-token log probabilities, `None` where the server returned none — the very first "
+            "token has no predecessor to score, and a segment appended without logprobs is all None."
+        ),
+    )
+    routed_experts: list[str] = Field(default_factory=list, description="Base64 routed-experts slice, one per turn.")
+    image_data: list[str] = Field(default_factory=list, description="Base64 image data URLs seen in the rollout.")
+    segment_info: list[tuple[bool, int]] = Field(
+        default_factory=list, description="`(is_output, length)` per appended segment, in order."
+    )
 
     def _add_segment(self, token_ids: list[int], logprobs: list[float | None] | None, *, is_output: bool) -> None:
         """Extend the flat fields with one segment and record its boundary.
@@ -68,13 +70,11 @@ class Rollout(BaseModel):
 
     @property
     def initial_prompt_length(self) -> int:
-        """Return the length of the initial prompt."""
         return self.segment_info[0][1] if self.segment_info else 0
 
     def __len__(self) -> int:
-        """Return the total number of tokens."""
         return len(self.token_ids)
 
     def __repr__(self) -> str:
-        """Return a concise representation (avoids dumping the full token lists)."""
+        """Concise — dumping the full token lists would be thousands of ints."""
         return f"Rollout(tokens={len(self.token_ids)}, output_tokens={sum(self.loss_mask)}), segments={len(self.segment_info)}"

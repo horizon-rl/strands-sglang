@@ -1,16 +1,7 @@
-"""Structured output example using SGLang's constrained decoding.
-
-This example demonstrates:
-1. Using model.structured_output() for LLM-as-Judge evaluation
-2. Constrained decoding guarantees valid JSON matching Pydantic schema
-3. No TITO tracking (inference-only use case)
-
-Requirements:
-    - SGLang server running: python -m sglang.launch_server --model-path Qwen/Qwen3-4B --port 30000
-
-Usage:
-    python examples/structured_output.py
-"""
+# Structured output against a running SGLang server.
+#
+#   python -m sglang.launch_server --model-path Qwen/Qwen3-4B --port 30000
+#   python examples/structured_output.py
 
 import asyncio
 import os

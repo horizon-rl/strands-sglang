@@ -1,9 +1,3 @@
-"""Integration tests for VLM (Vision Language Model) support.
-
-Requires an SGLang server running a VLM model (e.g., Qwen3.5-4B).
-Tests are automatically skipped if the server is running a text-only model.
-"""
-
 import io
 
 import pytest

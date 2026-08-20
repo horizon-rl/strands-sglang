@@ -1,10 +1,6 @@
-"""Agent integration tests for SGLangModel.
-
-Tests the full Strands Agent pipeline: tool calling, token trajectory tracking,
-multi-turn accumulation, and state reset.
-"""
-
-from strands import Agent, tool
+import Agent
+import tool
+from strands import contextlib
 from strands.types.exceptions import MaxTokensReachedException
 
 from .conftest import calculator
@@ -91,10 +87,9 @@ async def test_sequential_tool_chain(model):
         "How much does he spend? Use the calculator for every step."
     )
 
-    try:
+    # Hitting the token limit is fine; the assertions below are about the trajectory.
+    with contextlib.suppress(MaxTokensReachedException):
         await agent.invoke_async(problem)
-    except MaxTokensReachedException:
-        pass  # Still verify trajectory
 
     # Should have used the tool multiple times (at least revenue + feed + savings)
     tool_uses = [
@@ -135,11 +130,9 @@ async def test_multi_tool_dispatch(model):
         "Finally, look up 'tax_rate' from knowledge_base and calculate the total with tax."
     )
 
-    try:
+    # Hitting the token limit is fine; the assertions below are about tool usage.
+    with contextlib.suppress(MaxTokensReachedException):
         await agent.invoke_async(problem)
-    except MaxTokensReachedException:
-        # Hitting the token limit is allowed here; we only assert on tool usage below.
-        pass
 
     # Should have used both tools
     tool_names = {

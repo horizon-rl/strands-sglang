@@ -61,7 +61,7 @@ The GitHub release triggers `.github/workflows/publish.yml` which:
 2. Publishes to PyPI via trusted publishing (OIDC)
 
 After creating the release:
-- Run `gh run list --limit 3` to confirm the "Publish to PyPI" workflow was triggered.
+- Run `gh run list --limit 3` to confirm the "Publish" workflow was triggered.
 - Watch the run: `gh run watch <run_id>` (timeout 2 minutes).
 - Report the result to the user — if it failed, show the logs with `gh run view <run_id> --log-failed`.
 
@@ -70,3 +70,5 @@ After creating the release:
 - Always confirm version and release notes with the user before creating the release.
 - The version is derived from the git tag by hatch-vcs — there is no version field in `pyproject.toml` to update.
 - Do NOT modify `pyproject.toml`.
+- Get the number right the first time: the `tags-are-immutable` ruleset blocks moving or
+  deleting a tag, and PyPI refuses a second upload of the same filename.

@@ -1,12 +1,3 @@
-"""Chat template tests against real HuggingFace tokenizers.
-
-Source of truth for verifying `message_separator` detection and incremental
-tokenization (prefix subtraction) across all supported model families.
-
-Tests require network access to download tokenizers from HuggingFace on first run
-(cached afterwards). Mark: ``pytest -m chat_template``.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass

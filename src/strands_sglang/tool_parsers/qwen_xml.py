@@ -1,5 +1,3 @@
-"""Qwen XML tool call parser."""
-
 from __future__ import annotations
 
 import json
@@ -26,9 +24,7 @@ class QwenXMLToolParser(ToolParser):
         </function>
         </tool_call>
 
-    Notes:
-        - Function and parameter names are embedded in tag attributes.
-        - Think blocks are excluded to avoid parsing draft tool calls from reasoning.
+    Function and parameter names are embedded in tag attributes rather than the body.
     """
 
     _FUNCTION_PATTERN = re.compile(r"<function=([^>]+)>(.*?)</function>", re.DOTALL)

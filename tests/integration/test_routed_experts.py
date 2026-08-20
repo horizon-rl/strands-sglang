@@ -1,5 +1,3 @@
-"""Integration tests for MoE routed experts capture (R3)."""
-
 import json
 
 import numpy as np

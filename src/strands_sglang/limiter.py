@@ -1,5 +1,3 @@
-"""Strands hook for bounding the agent loop: tool iterations, tool calls, parallelism, and messages."""
-
 import logging
 from typing import Any
 
@@ -14,40 +12,31 @@ class LoopLimitReachedError(Exception):
 
 
 class MaxToolIterationsReachedError(LoopLimitReachedError):
-    """Raised when the `max_tool_iters` limit is reached.
-
-    Notes:
-        Raised after iteration completes, ensuring a clean trajectory without truncation.
-    """
+    """Raised after the `max_tool_iters`-th iteration finishes, so the trajectory needs no truncation."""
 
 
 class MaxToolCallsReachedError(LoopLimitReachedError):
-    """Raised when the `max_tool_calls` limit is reached.
-
-    Notes:
-        Raised after iteration completes, ensuring a clean trajectory without truncation.
-    """
+    """Raised after the iteration that reached `max_tool_calls` finishes, so nothing is truncated."""
 
 
 class MaxMessagesReachedError(LoopLimitReachedError):
-    """Raised when the `max_messages` limit is reached.
+    """Raised when a user-role message lands (initial prompt or tool result) at `max_messages`.
 
-    Notes:
-        Raised only when a user-role message lands (initial prompt or tool result), ensuring
-        the trajectory ends at a complete message boundary without truncation.
+    Checking only there is what makes the trajectory end on a complete message boundary.
     """
 
 
 class LoopLimiter(HookProvider):
     """Hook to bound the agent loop: tool iterations, tool calls, parallel calls, and message count.
 
+    An "iteration" is one cycle: the model emits tool call(s), they execute, results come back.
+    Parallel calls in a single response are one iteration but several calls. Limits raise at
+    complete message boundaries — a tool result or a user message — so a trajectory never needs
+    token truncation.
+
     Notes:
-        - An "iteration" is one cycle of: model generates tool call(s) -> tool(s) execute -> result(s) returned.
-        - Multiple parallel tool calls in one model response count as a single iteration but as individual calls.
-        - Limits raise at complete message boundaries (tool result or user message), ensuring a clean
-          trajectory without requiring token truncation.
-        - Counters accumulate across invocations of the same agent until `reset()` is called, so
-          `max_messages` can bound total conversation length in multi-turn environment loops.
+        Counters accumulate across invocations of the same agent until `reset()`, which is what lets
+        `max_messages` bound a whole multi-turn conversation rather than one invoke.
 
     Example:
         >>> limiter = LoopLimiter(max_tool_iters=5)

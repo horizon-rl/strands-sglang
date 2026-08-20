@@ -1,17 +1,3 @@
-"""VLM agent example with inline image and image-returning tool.
-
-Demonstrates two ways images enter the strands-sglang VLM pipeline:
-
-1. **Inline in user prompt** — a.jpg is embedded directly in the initial message
-2. **Via tool result** — the agent calls ``read_image("b.jpg")`` to load the second image
-
-After the agent finishes, we inspect the TITO trajectory.
-
-Usage:
-    python examples/vlm_agent/vlm_agent.py
-    # Configure via env vars: SGLANG_BASE_URL, MODEL_PATH
-"""
-
 import asyncio
 import json
 import os

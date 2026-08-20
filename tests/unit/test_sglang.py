@@ -1,5 +1,3 @@
-"""Unit tests for SGLangModel helper methods (no API calls needed)."""
-
 from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np

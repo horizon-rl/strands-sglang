@@ -1,5 +1,3 @@
-"""SGLang model provider for Strands Agents for on-policy agentic RL training."""
-
 from .client import SGLangClient
 from .exceptions import (
     SGLangClientError,

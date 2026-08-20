@@ -1,5 +1,3 @@
-"""Integration tests for structured output via SGLang's json_schema constrained decoding."""
-
 from pydantic import BaseModel
 
 
