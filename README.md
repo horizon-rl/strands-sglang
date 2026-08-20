@@ -30,7 +30,7 @@
 ## Installation
 
 ```bash
-pip install strands-sglang strands-agents-tools
+pip install strands-sglang
 ```
 
 Or install from source with development dependencies:
