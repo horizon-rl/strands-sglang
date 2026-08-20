@@ -1,76 +1,92 @@
+# Hook revisions are pinned to commit SHAs, not tags: a tag can be moved to point
+# at new code, a SHA cannot. `pre-commit autoupdate --freeze` regenerates them and
+# keeps the trailing `# frozen:` comment in sync, so the readable version stays visible.
+#
+# These hooks are convenience, not the gate: CI runs `pre-commit run --all-files`,
+# so nothing here can be skipped for good with `--no-verify`.
+
+default_install_hook_types: [pre-commit, commit-msg]
+
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.4
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
     hooks:
-      - id: ruff
-        args: [--fix]
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-yaml
+      - id: debug-statements
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      # A test file that isn't named test_*.py is silently never collected.
+      - id: name-tests-test
+        args: [--pytest-test-first]
+      - id: trailing-whitespace
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 65dbdb59d2f2d9c3bdc343c566821ad3319ddaa3 # frozen: v0.16.3
+    hooks:
+      - id: ruff-check
+        args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+  - repo: https://github.com/crate-ci/typos
+    rev: 8a48f81b6c64dcfea44b3633223084c4be58ac5f # frozen: v1.49.0
     hooks:
-      - id: check-yaml
-      - id: check-case-conflict
-      - id: detect-private-key
-      - id: check-added-large-files
-        args: ['--maxkb=1000']
-      - id: requirements-txt-fixer
-      - id: end-of-file-fixer
-      - id: trailing-whitespace
-      - id: check-merge-conflict
+      - id: typos
 
-  - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
+  - repo: https://github.com/abravalheri/validate-pyproject
+    rev: 4b2e70d08cb2ccd26d1fba73588de41c7a5d50b7 # frozen: v0.25
     hooks:
-      - id: codespell
-        additional_dependencies:
-          - tomli
+      - id: validate-pyproject
+        additional_dependencies: ["validate-pyproject-schema-store[all]"]
 
-  - repo: https://github.com/Lucas-C/pre-commit-hooks
-    rev: v1.5.6
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 6b63472e72e1a91ed8a2f6d483790dfb644fa1d3 # frozen: 0.37.4
     hooks:
-      - id: insert-license
-        files: \.py$
-        args:
-          - --license-filepath=.license-header.txt
-          - --comment-style=#
+      - id: check-github-workflows
+      - id: check-dependabot
 
-  - repo: local
+  # Audits workflows for supply-chain and injection issues (unpinned actions,
+  # cache poisoning, script injection).
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: 451b56af716f9f0d0c2b816503a3fd0cf8b036fa # frozen: v1.29.0
     hooks:
-      - id: slime-casing
-        name: Enforce lowercase "slime"
-        entry: sed -i '' -E 's/([^a-zA-Z_]|^)(SLIME|Slime)([^a-zA-Z_]|$)/\1slime\3/g'
-        language: system
-        types_or: [python, markdown]
-      - id: mypy
-        name: Type check (mypy)
-        entry: mypy src/strands_sglang
-        language: system
-        pass_filenames: false
-        types: [python]
-        stages: [pre-commit]
-      - id: unit-tests
-        name: Unit tests
-        entry: pytest tests/unit/ -x -q
-        language: system
-        pass_filenames: false
-        types: [python]
-        stages: [pre-commit]
+      - id: zizmor
+
+  # Editing pyproject.toml without refreshing uv.lock is an easy miss.
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: b84c4a0a90bd58c7d82ae8f0d4d5e77b1ddd3ce6 # frozen: 0.12.5
+    hooks:
+      - id: uv-lock
 
   - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v4.4.0
+    rev: 91ab4bf57e58b32adf1a122681f6ebe164d081c8 # frozen: v4.4.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
-        args:
-          - feat
-          - fix
-          - docs
-          - style
-          - refactor
-          - perf
-          - test
-          - build
-          - ci
-          - chore
-          - revert
+
+  - repo: local
+    hooks:
+      # `language: system` runs mypy from the project venv rather than an isolated
+      # one, so stubs and dependency versions match pyproject exactly and don't
+      # need restating under `additional_dependencies`. Requires `uv sync` first.
+      # pass_filenames is off because mypy needs the whole package to infer
+      # correctly; checking only the staged files both misses and invents errors.
+      - id: mypy
+        name: mypy
+        entry: uv run mypy src/strands_sglang
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest (fast)
+        entry: uv run pytest tests/unit -x -q
+        language: system
+        types: [python]
+        pass_filenames: false

@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+# No token by default; each job opts into exactly what it needs.
+permissions: {}
+
+# A new push to a PR cancels the in-flight run; pushes to main always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Actions are pinned to commit SHAs, not tags: a tag can be moved to point at
+# new code, a SHA cannot. Dependabot bumps these and keeps the trailing comment
+# in sync, so the readable version stays visible.
+env:
+  # "manual" allows the explicit `python-version` install below but blocks uv from
+  # silently fetching an interpreter to satisfy a resolve. "never" would block both.
+  UV_PYTHON_DOWNLOADS: manual
+  FORCE_COLOR: "1"
+
+jobs:
+  lint:
+    name: lint & types
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+
+      - run: uv python install 3.12
+      - run: uv sync --python 3.12
+
+      # Runs the hooks themselves rather than restating each tool here, so local
+      # and CI can't drift. Covers ruff, typos, zizmor, schema checks, uv-lock.
+      # `--no-verify` can skip them locally; this step can't be skipped.
+      - name: pre-commit
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+        env:
+          # The mypy/pytest hooks call `uv run`, which would try to re-lock.
+          UV_FROZEN: "1"
+
+      - name: ruff (annotate PR diff)
+        if: failure()
+        run: uv run ruff check --output-format=github .
+
+  test:
+    name: test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+          cache-suffix: py${{ matrix.python-version }}
+
+      # Explicit install: `UV_PYTHON_DOWNLOADS: manual` permits this but stops
+      # `uv sync` from fetching an interpreter on its own.
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --python ${{ matrix.python-version }}
+
+      - name: pytest
+        run: >-
+          uv run --python ${{ matrix.python-version }}
+          pytest tests/unit
+          --cov=strands_sglang --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # The one required status check. Matrix jobs change shape; this never does,
+  # so branch protection doesn't need updating when the matrix grows.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all jobs succeeded
+        uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}

@@ -54,10 +54,14 @@ python -m sglang.launch_server --model-path Qwen/Qwen3.5-4B
 ```python
 import asyncio
 from transformers import AutoTokenizer
-from strands import Agent
-from strands_tools import calculator
+from strands import Agent, tool
 from strands_sglang import SGLangClient, SGLangModel
 from strands_sglang.tool_parsers import get_tool_parser
+
+@tool
+def calculator(expression: str) -> str:
+    """Evaluate an arithmetic expression."""
+    return str(eval(expression))
 
 async def main():
     model = SGLangModel(

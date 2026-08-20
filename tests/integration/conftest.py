@@ -1,17 +1,3 @@
-# Copyright 2025-2026 Strands RL Contributors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Shared fixtures for integration tests.
 
 All tests in this directory are automatically marked as integration tests
@@ -26,6 +12,7 @@ The model ID is auto-detected from the server's /model_info endpoint.
 
 import httpx
 import pytest
+from strands import tool
 from transformers import AutoTokenizer
 
 from strands_sglang import SGLangModel
@@ -156,6 +143,22 @@ async def routed_experts_model(tokenizer, sglang_base_url, sglang_server_info, t
     model.moe_top_k = top_k
     yield model
     await client.close()
+
+
+@tool
+def calculator(expression: str) -> str:
+    """Evaluate an arithmetic expression.
+
+    Args:
+        expression: An arithmetic expression over numbers, e.g. "7 * 13" or "2.50 * 3 + 1".
+    """
+    allowed = set("0123456789.+-*/() ")
+    if not expression or set(expression) - allowed:
+        return f"Unsupported expression: {expression!r}"
+    try:
+        return str(eval(expression, {"__builtins__": {}}, {}))  # noqa: S307 — alphabet is restricted above
+    except Exception as e:
+        return f"Could not evaluate {expression!r}: {e}"
 
 
 @pytest.fixture

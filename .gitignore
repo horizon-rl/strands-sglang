@@ -186,9 +186,6 @@ pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks
 
-# Ignore uv lock files for now (uncomment if later UV is used)
-uv.lock
-
 # Ignore nohup.out
 nohup.out
 
@@ -210,9 +207,6 @@ temp/
 # Ignore test notebooks
 test*.ipynb
 testing/
-
-# Ignore uv.lock
-uv.lock
 
 # Ignore data folder
 /data
